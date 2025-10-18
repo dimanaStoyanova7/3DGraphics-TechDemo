@@ -63,63 +63,153 @@ public:
             std::cerr << e.what() << std::endl;
         }
     }
+    // --- Multiple views ---
+    struct Viewport { int x, y, w, h; };
+
+    struct FreeCam {
+        glm::vec3 pos { -1.5f, 1.0f, -1.5f };
+        glm::vec3 fwd {  0.6f, -0.2f,  0.7f }; 
+        glm::vec3 up  {  0.0f, 1.0f,  0.0f };
+        double prevMouseX = 0.0, prevMouseY = 0.0;
+        bool rotating = false;
+    };
+
+    FreeCam m_freeCam;
+
+    // Bird’s-eye parameters
+    float m_birdsEyeWorldHalfSize = 2.0f;  
+    glm::vec3 m_birdsEyeCenter { 0.0f, 0.0f, 0.0f };
+    float m_birdsEyeHeight = 5.0f;         
+
+    // UI / control
+    bool  m_activeFreeCam = true;          // which camera gets input
+
+    glm::mat4 birdsEyeView() const {
+    return glm::lookAt(glm::vec3(m_birdsEyeCenter.x, m_birdsEyeHeight, m_birdsEyeCenter.z),
+                       m_birdsEyeCenter, glm::vec3(0, 0, -1));
+    }
+
+    glm::mat4 birdsEyeProj(float aspect) const {
+        const float sx = m_birdsEyeWorldHalfSize;
+        const float sy = m_birdsEyeWorldHalfSize / aspect;
+        return glm::ortho(-sx, +sx, -sy, +sy, 0.01f, 100.0f);
+    }
+
+    glm::mat4 freeCamView() const {
+        return glm::lookAt(m_freeCam.pos, m_freeCam.pos + m_freeCam.fwd, m_freeCam.up);
+    }
+
+    glm::mat4 freeCamProj(float aspect) const {
+        return glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
+    }
+
+    
+    float birdsEyeHalfSize = 2.0f;         // world half-extent visible in ortho
+    float birdsEyeHeight   = 5.0f;         // camera height
 
     void update()
     {
-        int dummyInteger = 0; // Initialized to 0
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glFrontFace(GL_CCW);
+        glEnable(GL_SCISSOR_TEST);
+
+        bool  splitVertical = true;            // left/right (vs top/bottom)
+        bool  useMaterialUI = m_useMaterial;   // mirror your UI toggle
+        
+        glm::vec3 birdsEyeCenter(0.0f);
+
+        // (optional) free-cam state – if you already manage this elsewhere, remove these
+        static glm::vec3 fcPos(-1.5f, 1.0f, -1.5f);
+        static glm::vec3 fcFwd(0.6f, -0.2f, 0.7f);
+        static glm::vec3 fcUp (0.0f, 1.0f,  0.0f);
+
+        auto freeCamView = [&] {
+            return glm::lookAt(fcPos, fcPos + fcFwd, fcUp);
+        };
+        auto freeCamProj = [&](float aspect) {
+            return glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
+        };
+
+        struct Viewport { int x, y, w, h; };
+
+        int dummyInteger = 0; // demo UI
         while (!m_window.shouldClose()) {
             // This is your game loop
             // Put your real-time logic and rendering in here
             m_window.updateInput();
-
             // Use ImGui for easy input/output of ints, floats, strings, etc...
-            ImGui::Begin("Window");
+            ImGui::Begin("Views");
             ImGui::InputInt("This is an integer input", &dummyInteger); // Use ImGui::DragInt or ImGui::DragFloat for larger range of numbers.
-            ImGui::Text("Value is: %i", dummyInteger); // Use C printf formatting rules (%i is a signed integer)
+            ImGui::InputInt("This is an integer input", &dummyInteger); // Use ImGui::DragInt or ImGui::DragFloat for larger range of numbers.
             ImGui::Checkbox("Use material if no texture", &m_useMaterial);
+            ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
+            ImGui::SliderFloat("BirdsEye height",    &birdsEyeHeight,   1.0f, 20.0f); //don't update anything yet
             ImGui::End();
 
             // Clear the screen
             glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            // ...
-            glEnable(GL_DEPTH_TEST);
+            // Compute viewports
+            const glm::ivec2 fb = m_window.getFrameBufferSize();
+            Viewport vpA, vpB;
+             
+            vpA = { 0,        0, fb.x / 2, fb.y };
+            vpB = { fb.x / 2, 0, fb.x - fb.x / 2, fb.y };
+            
+            auto drawView = [&](const Viewport& vp, const glm::mat4& P, const glm::mat4& V) {
+                glViewport(vp.x, vp.y, vp.w, vp.h);
+                glScissor (vp.x, vp.y, vp.w, vp.h);
+                glClear(GL_DEPTH_BUFFER_BIT);
 
-            const glm::mat4 mvpMatrix = m_projectionMatrix * m_viewMatrix * m_modelMatrix;
-            // Normals should be transformed differently than positions (ignoring translations + dealing with scaling):
-            // https://paroj.github.io/gltut/Illumination/Tut09%20Normal%20Transformation.html
-            const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(m_modelMatrix));
+                const glm::mat4& M  = m_modelMatrix; // your existing model transform
+                const glm::mat4 mvpMatrix = P * V * M;
+                const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(M));
 
-            for (GPUMesh& mesh : m_meshes) {
-                m_defaultShader.bind();
-                glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
-                //Uncomment this line when you use the modelMatrix (or fragmentPosition)
-                //glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix));
-                glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-                if (mesh.hasTextureCoords()) {
-                    m_texture.bind(GL_TEXTURE0);
-                    glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
-                    glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-                    glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
-                } else {
-                    glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                    glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial);
+                for (GPUMesh& mesh : m_meshes) {
+                    m_defaultShader.bind();
+                    glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+                    //Uncomment this line when you use the modelMatrix (or fragmentPosition)
+                    //glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix));
+                    glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+                    if (mesh.hasTextureCoords()) {
+                        m_texture.bind(GL_TEXTURE0);
+                        glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
+                        glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+                        glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
+                    } else {
+                        glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
+                        glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial);
+                    }
+                    mesh.draw(m_defaultShader);
                 }
-                mesh.draw(m_defaultShader);
-            }
+            };
 
-            // Processes input and swaps the window buffer
+            // Draw the two views
+            const float aspectA = float(vpA.w) / float(vpA.h ? vpA.h : 1);
+            const float aspectB = float(vpB.w) / float(vpB.h);
+            drawView(vpA, birdsEyeProj(aspectA), birdsEyeView());
+            drawView(vpB, freeCamProj(aspectB),  freeCamView());
+
             m_window.swapBuffers();
         }
     }
 
-    // In here you can handle key presses
-    // key - Integer that corresponds to numbers in https://www.glfw.org/docs/latest/group__keys.html
-    // mods - Any modifier keys pressed, like shift or control
-    void onKeyPressed(int key, int mods)
-    {
-        std::cout << "Key pressed: " << key << std::endl;
+    void onKeyPressed(int key, int mods) {
+        if (!m_activeFreeCam) return;
+
+        const float move = 0.08f;
+        glm::vec3 right = glm::normalize(glm::cross(m_freeCam.fwd, m_freeCam.up));
+        if (key == GLFW_KEY_W) m_freeCam.pos += move * m_freeCam.fwd;
+        if (key == GLFW_KEY_S) m_freeCam.pos -= move * m_freeCam.fwd;
+        if (key == GLFW_KEY_A) m_freeCam.pos -= move * right;
+        if (key == GLFW_KEY_D) m_freeCam.pos += move * right;
+        if (key == GLFW_KEY_SPACE) m_freeCam.pos += move * m_freeCam.up;
+        if (key == GLFW_KEY_C)     m_freeCam.pos -= move * m_freeCam.up;
+
+        if (key == GLFW_KEY_TAB) m_activeFreeCam = !m_activeFreeCam;
     }
 
     // In here you can handle key releases
@@ -130,26 +220,36 @@ public:
         std::cout << "Key released: " << key << std::endl;
     }
 
-    // If the mouse is moved this function will be called with the x, y screen-coordinates of the mouse
-    void onMouseMove(const glm::dvec2& cursorPos)
-    {
-        std::cout << "Mouse at position: " << cursorPos.x << " " << cursorPos.y << std::endl;
+    void onMouseMove(const glm::dvec2& cursorPos) {
+        if (!m_activeFreeCam || !m_freeCam.rotating) return;
+        const float lookSpeed = 0.0015f;
+        double dx = cursorPos.x - m_freeCam.prevMouseX;
+        double dy = cursorPos.y - m_freeCam.prevMouseY;
+        m_freeCam.prevMouseX = cursorPos.x; m_freeCam.prevMouseY = cursorPos.y;
+
+        // yaw around world up:
+        glm::mat4 yaw   = glm::rotate(glm::mat4(1.0f), float(-dx * lookSpeed), glm::vec3(0,1,0));
+        // pitch around camera right:
+        glm::vec3 right = glm::normalize(glm::cross(m_freeCam.fwd, m_freeCam.up));
+        glm::mat4 pitch = glm::rotate(glm::mat4(1.0f), float(-dy * lookSpeed), right);
+
+        glm::vec3 dir = glm::vec3(pitch * yaw * glm::vec4(m_freeCam.fwd, 0.0f));
+        m_freeCam.fwd  = glm::normalize(dir);
+        m_freeCam.up   = glm::normalize(glm::cross(glm::cross(m_freeCam.fwd, glm::vec3(0,1,0)), m_freeCam.fwd));
     }
 
-    // If one of the mouse buttons is pressed this function will be called
-    // button - Integer that corresponds to numbers in https://www.glfw.org/docs/latest/group__buttons.html
-    // mods - Any modifier buttons pressed
-    void onMouseClicked(int button, int mods)
-    {
-        std::cout << "Pressed mouse button: " << button << std::endl;
+
+    void onMouseClicked(int button, int mods) {
+        if (m_activeFreeCam && button == GLFW_MOUSE_BUTTON_LEFT) {
+            m_freeCam.rotating = true;
+            auto c = m_window.getCursorPos();
+            m_freeCam.prevMouseX = c.x; m_freeCam.prevMouseY = c.y;
+        }
     }
 
-    // If one of the mouse buttons is released this function will be called
-    // button - Integer that corresponds to numbers in https://www.glfw.org/docs/latest/group__buttons.html
-    // mods - Any modifier buttons pressed
-    void onMouseReleased(int button, int mods)
-    {
-        std::cout << "Released mouse button: " << button << std::endl;
+    void onMouseReleased(int button, int mods) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT)
+            m_freeCam.rotating = false;
     }
 
 private:
