@@ -41,7 +41,8 @@ public:
                 onMouseReleased(button, mods);
         });
 
-        m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/dragon.obj");
+        m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj");
+        std::cout << "Mesh triangle " << m_meshes.size() << std::endl;
 
         try {
             ShaderBuilder defaultBuilder;
@@ -90,7 +91,7 @@ public:
             // Normals should be transformed differently than positions (ignoring translations + dealing with scaling):
             // https://paroj.github.io/gltut/Illumination/Tut09%20Normal%20Transformation.html
             const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(m_modelMatrix));
-
+            int i = 0;
             for (GPUMesh& mesh : m_meshes) {
                 m_defaultShader.bind();
                 glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
@@ -106,6 +107,8 @@ public:
                     glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
                     glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial);
                 }
+                std::cout << "Mesh: " << i << std::endl;
+                i++;
                 mesh.draw(m_defaultShader);
             }
 
@@ -165,7 +168,7 @@ private:
 
     // Projection and view matrices for you to fill in and use
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
-    glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-1, 1, -1), glm::vec3(0), glm::vec3(0, 1, 0));
+    glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-3, 3, -1), glm::vec3(0), glm::vec3(0, 1, 0));
     glm::mat4 m_modelMatrix { 1.0f };
 };
 

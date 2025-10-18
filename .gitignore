@@ -1,0 +1,23 @@
+# IDE
+.vs/
+*.VC.db
+*.VC.VC.opendb
+
+# CMake / build outputs
+/build/
+out/
+CMakeFiles/
+CMakeCache.txt
+*.log
+
+# MSVC typical configs
+/Debug/
+/Release/
+/x64/
+/ipch/
+*.pch
+
+# VS user files
+*.user
+*.suo
+*.opendb
