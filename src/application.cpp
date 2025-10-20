@@ -1,6 +1,7 @@
 //#include "Image.h"
 #include "mesh.h"
 #include "texture.h"
+#include "BezierPath.h"
 // Always include window first (because it includes glfw, which includes GL which needs to be included AFTER glew).
 // Can't wait for modules to fix this stuff...
 #include <framework/disable_all_warnings.h>
@@ -53,6 +54,12 @@ public:
             shadowBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shadow_vert.glsl");
             shadowBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "Shaders/shadow_frag.glsl");
             m_shadowShader = shadowBuilder.build();
+            
+            // Init path renderer (line shader) and default closed loop
+            m_bezierPath.initGL(RESOURCE_ROOT "shaders/line_vert.glsl",
+                                RESOURCE_ROOT "shaders/line_frag.glsl");
+            m_bezierPath.setVisible(m_showCurve);
+            m_prevTime = glfwGetTime();
 
             // Any new shaders can be added below in similar fashion.
             // ==> Don't forget to reconfigure CMake when you do!
@@ -79,7 +86,18 @@ public:
     // Bird’s-eye parameters
     float m_birdsEyeWorldHalfSize = 2.0f;  
     glm::vec3 m_birdsEyeCenter { 0.0f, 0.0f, 0.0f };
-    float m_birdsEyeHeight = 5.0f;         
+    float m_birdsEyeHeight = 5.0f;
+
+    // ---- Lamp & path ----
+    BezierPath m_bezierPath;
+    bool   m_showCurve   = true;          // curve visibility toggle (mirrors BezierPath)
+    bool   m_pauseLamp   = false;         // pause animation
+    float  m_lampSpeed   = 0.15f;         // segments per second
+    float  m_pathU       = 0.0f;          // global path parameter
+    glm::vec3 m_lampPos  = {0.0f, 1.5f, 0.0f};
+    glm::vec3 m_lampColor= {10.0f, 9.0f, 7.0f}; // bright, warm
+    double m_prevTime    = 0.0;
+
 
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
@@ -139,6 +157,16 @@ public:
             // This is your game loop
             // Put your real-time logic and rendering in here
             m_window.updateInput();
+
+            // --- Lamp path advance ---
+            double now = glfwGetTime();
+            float dt = float(now - m_prevTime);
+            m_prevTime = now;
+
+            if (!m_pauseLamp) {
+                m_pathU += m_lampSpeed * dt; // segments per second
+            }
+            m_lampPos = m_bezierPath.evalGlobal(m_pathU);
             // Use ImGui for easy input/output of ints, floats, strings, etc...
             ImGui::Begin("Views");
             ImGui::InputInt("This is an integer input", &dummyInteger); // Use ImGui::DragInt or ImGui::DragFloat for larger range of numbers.
@@ -146,6 +174,15 @@ public:
             ImGui::Checkbox("Use material if no texture", &m_useMaterial);
             ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
             ImGui::SliderFloat("BirdsEye height",    &birdsEyeHeight,   1.0f, 20.0f); //don't update anything yet
+
+            ImGui::Separator();
+            ImGui::TextUnformatted("Lamp / Path");
+            if (ImGui::Checkbox("Show Bézier curve", &m_showCurve)) {
+                m_bezierPath.setVisible(m_showCurve);
+            }
+            ImGui::Checkbox("Pause lamp", &m_pauseLamp);
+            ImGui::SliderFloat("Lamp speed (segments/s)", &m_lampSpeed, 0.0f, 1.0f);
+
             ImGui::End();
 
             // Clear the screen
@@ -168,8 +205,24 @@ public:
                 const glm::mat4 mvpMatrix = P * V * M;
                 const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(M));
 
+                m_defaultShader.bind();
+
+                glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
+                glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+
+                glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
+                glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix)); 
+                glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+
+                glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
+                glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+
+
                 for (GPUMesh& mesh : m_meshes) {
                     m_defaultShader.bind();
+                    glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
+                    glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+
                     glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
                     //Uncomment this line when you use the modelMatrix (or fragmentPosition)
                     //glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix));
@@ -191,7 +244,10 @@ public:
             const float aspectA = float(vpA.w) / float(vpA.h ? vpA.h : 1);
             const float aspectB = float(vpB.w) / float(vpB.h);
             drawView(vpA, birdsEyeProj(aspectA), birdsEyeView());
+            m_bezierPath.drawCurve({vpA.x, vpA.y, vpA.w, vpA.h}, birdsEyeProj(aspectA), birdsEyeView(), glm::vec3(0.9f, 0.2f, 0.1f));
             drawView(vpB, freeCamProj(aspectB),  freeCamView());
+            m_bezierPath.drawCurve({vpB.x, vpB.y, vpB.w, vpB.h}, freeCamProj(aspectB),  freeCamView(),  glm::vec3(0.9f, 0.2f, 0.1f));
+
 
             m_window.swapBuffers();
         }
@@ -208,6 +264,9 @@ public:
         if (key == GLFW_KEY_D) m_freeCam.pos += move * right;
         if (key == GLFW_KEY_SPACE) m_freeCam.pos += move * m_freeCam.up;
         if (key == GLFW_KEY_C)     m_freeCam.pos -= move * m_freeCam.up;
+
+        if (key == GLFW_KEY_L) { m_showCurve = !m_showCurve; m_bezierPath.setVisible(m_showCurve); }
+        if (key == GLFW_KEY_P) { m_pauseLamp = !m_pauseLamp; }
 
         if (key == GLFW_KEY_TAB) m_activeFreeCam = !m_activeFreeCam;
     }
