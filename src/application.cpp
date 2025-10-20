@@ -162,7 +162,7 @@ public:
             auto drawView = [&](const Viewport& vp, const glm::mat4& P, const glm::mat4& V) {
                 glViewport(vp.x, vp.y, vp.w, vp.h);
                 glScissor (vp.x, vp.y, vp.w, vp.h);
-                glClear(GL_DEPTH_BUFFER_BIT);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
                 const glm::mat4& M  = m_modelMatrix; // your existing model transform
                 const glm::mat4 mvpMatrix = P * V * M;
