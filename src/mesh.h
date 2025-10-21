@@ -10,6 +10,7 @@ DISABLE_WARNINGS_POP()
 #include <exception>
 #include <filesystem>
 #include <framework/opengl_includes.h>
+#include "texture.h"
 
 struct MeshLoadingException : public std::runtime_error {
     using std::runtime_error::runtime_error;
@@ -23,6 +24,13 @@ struct GPUMaterial {
 	alignas(16) glm::vec3 ks{ 0.0f };
 	float shininess{ 1.0f };
 	float transparency{ 1.0f };
+
+    // Optional texture that replaces kd; use as follows:
+    // 
+    // if (material.kdTexture) {
+    //   material.kdTexture->getTexel(...);
+    // }
+    //std::shared_ptr<Image> kdTexture;
 };
 
 class GPUMesh {
@@ -42,9 +50,11 @@ public:
     GPUMesh& operator=(GPUMesh&&);
 
     bool hasTextureCoords() const;
+    std::string texturePath;
 
     // Bind VAO and call glDrawElements.
     void draw(const Shader& drawingShader);
+    GLsizei m_numIndices{ 0 };
 
 private:
     void moveInto(GPUMesh&&);
@@ -53,7 +63,7 @@ private:
 private:
     static constexpr GLuint INVALID = 0xFFFFFFFF;
 
-    GLsizei m_numIndices { 0 };
+    
     bool m_hasTextureCoords { false };
     GLuint m_ibo { INVALID };
     GLuint m_vbo { INVALID };

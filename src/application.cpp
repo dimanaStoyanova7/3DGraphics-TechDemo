@@ -20,12 +20,14 @@ DISABLE_WARNINGS_POP()
 #include <functional>
 #include <iostream>
 #include <vector>
+#include <map>
+#include <string>
 
 class Application {
 public:
     Application()
         : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41)
-        , m_texture(RESOURCE_ROOT "resources/checkerboard.png")
+        //, m_texture(RESOURCE_ROOT "resources/wall-e/Atlas_Metal.png")
     {
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods) {
             if (action == GLFW_PRESS)
@@ -42,7 +44,20 @@ public:
         });
 
         m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj");
-        std::cout << "Mesh triangle " << m_meshes.size() << std::endl;
+
+        for (GPUMesh& mesh : m_meshes) {
+            if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
+                const std::string path = mesh.texturePath;
+
+                // 1. Check if texture is already in cache
+                if (textureCache.find(path) == textureCache.end()) {
+                    // 2. Not found: Load it and insert into cache
+                    std::cout << "Loading unique texture: " << path << mesh.m_numIndices<< std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+
+            }
+        }
 
         try {
             ShaderBuilder defaultBuilder;
@@ -91,15 +106,17 @@ public:
             // Normals should be transformed differently than positions (ignoring translations + dealing with scaling):
             // https://paroj.github.io/gltut/Illumination/Tut09%20Normal%20Transformation.html
             const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(m_modelMatrix));
-            int i = 0;
-            for (GPUMesh& mesh : m_meshes) {
+			for (GPUMesh& mesh : m_meshes) {
                 m_defaultShader.bind();
                 glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
                 //Uncomment this line when you use the modelMatrix (or fragmentPosition)
                 //glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix));
                 glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-                if (mesh.hasTextureCoords()) {
-                    m_texture.bind(GL_TEXTURE0);
+                if (!mesh.texturePath.empty()) {
+					Texture& texture = textureCache.at(mesh.texturePath);
+                    //m_texture.bind(GL_TEXTURE0);
+                    //mesh.m_texture.bind(GL_TEXTURE0);
+                    texture.bind(GL_TEXTURE0);
                     glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
                     glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
                     glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
@@ -107,8 +124,6 @@ public:
                     glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
                     glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial);
                 }
-                std::cout << "Mesh: " << i << std::endl;
-                i++;
                 mesh.draw(m_defaultShader);
             }
 
@@ -163,12 +178,13 @@ private:
     Shader m_shadowShader;
 
     std::vector<GPUMesh> m_meshes;
-    Texture m_texture;
+    std::map<std::string, Texture> textureCache;
+	Texture m_texture;
     bool m_useMaterial { true };
 
     // Projection and view matrices for you to fill in and use
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
-    glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-3, 3, -1), glm::vec3(0), glm::vec3(0, 1, 0));
+    glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-6, 6, 1), glm::vec3(0), glm::vec3(0, 1, 0));
     glm::mat4 m_modelMatrix { 1.0f };
 };
 

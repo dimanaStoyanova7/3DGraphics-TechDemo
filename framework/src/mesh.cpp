@@ -11,12 +11,12 @@ DISABLE_WARNINGS_POP()
 #include <cassert>
 #include <exception>
 #include <iostream>
+#include <map>
 #include <numeric>
 #include <span>
 #include <stack>
 #include <string>
 #include <tuple>
-#include <map>
 
 static void centerAndScaleToUnitMesh(std::span<Mesh> meshes);
 
@@ -130,8 +130,9 @@ std::vector<Mesh> loadMesh(const std::filesystem::path& file, const LoadMeshSett
             } else {
                 const auto& objMaterial = inMaterials[materialID];
                 mesh.material.kd = construct_vec3(objMaterial.diffuse);
+   
                 if (!objMaterial.diffuse_texname.empty()) {
-                    mesh.material.kdTexture = std::make_shared<Image>(baseDir / objMaterial.diffuse_texname);
+                    mesh.material.kdTexture = baseDir / objMaterial.diffuse_texname;
                 }
                 mesh.material.ks = construct_vec3(objMaterial.specular);
                 mesh.material.shininess = objMaterial.shininess;
