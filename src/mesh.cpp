@@ -1,16 +1,19 @@
 #include "mesh.h"
+#include "texture.h"
 #include <framework/disable_all_warnings.h>
 DISABLE_WARNINGS_PUSH()
 #include <fmt/format.h>
 DISABLE_WARNINGS_POP()
 #include <iostream>
 #include <vector>
+#include <iostream>
 
 GPUMaterial::GPUMaterial(const Material& material) :
     kd(material.kd),
     ks(material.ks),
     shininess(material.shininess),
     transparency(material.transparency)
+	//kdTexture(material.kdTexture)
 {}
 
 GPUMesh::GPUMesh(const Mesh& cpuMesh)
@@ -22,7 +25,12 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh)
     glBufferData(GL_UNIFORM_BUFFER, sizeof(GPUMaterial), &gpuMaterial, GL_STATIC_READ);
 
     // Figure out if this mesh has texture coordinates
-    m_hasTextureCoords = static_cast<bool>(cpuMesh.material.kdTexture);
+    //m_hasTextureCoords = static_cast<bool>(cpuMesh.material.kdTexture);
+	m_hasTextureCoords = !cpuMesh.material.kdTexture.empty();
+    if( m_hasTextureCoords ) {
+		//std::cout << "Loading texture for mesh" << cpuMesh.material.kdTexture.generic_string()<< m_numIndices << std::endl;
+        texturePath = cpuMesh.material.kdTexture.generic_string();
+	}
 
     // Create VAO and bind it so subsequent creations of VBO and IBO are bound to this VAO
     glGenVertexArrays(1, &m_vao);
@@ -77,6 +85,7 @@ std::vector<GPUMesh> GPUMesh::loadMeshGPU(std::filesystem::path filePath, bool n
 
     // Generate GPU-side meshes for all sub-meshes
     std::vector<Mesh> subMeshes = loadMesh(filePath, { .normalizeVertexPositions = normalize });
+
     std::vector<GPUMesh> gpuMeshes;
     for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh); }
     
@@ -108,6 +117,7 @@ void GPUMesh::moveInto(GPUMesh&& other)
     m_vbo = other.m_vbo;
     m_vao = other.m_vao;
     m_uboMaterial = other.m_uboMaterial;
+    texturePath = other.texturePath;
 
     other.m_numIndices = 0;
     other.m_hasTextureCoords = other.m_hasTextureCoords;
