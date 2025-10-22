@@ -21,12 +21,14 @@ DISABLE_WARNINGS_POP()
 #include <functional>
 #include <iostream>
 #include <vector>
+#include <map>
+#include <string>
 
 class Application {
 public:
     Application()
         : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41)
-        , m_texture(RESOURCE_ROOT "resources/checkerboard.png")
+        //, m_texture(RESOURCE_ROOT "resources/wall-e/Atlas_Metal.png")
     {
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods) {
             if (action == GLFW_PRESS)
@@ -42,7 +44,21 @@ public:
                 onMouseReleased(button, mods);
         });
 
-        m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/dragon.obj");
+        m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj");
+
+        for (GPUMesh& mesh : m_meshes) {
+            if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
+                const std::string path = mesh.texturePath;
+
+                // 1. Check if texture is already in cache
+                if (textureCache.find(path) == textureCache.end()) {
+                    // 2. Not found: Load it and insert into cache
+                    std::cout << "Loading unique texture: " << path << mesh.m_numIndices<< std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+
+            }
+        }
 
         try {
             ShaderBuilder defaultBuilder;
@@ -185,66 +201,68 @@ public:
 
             ImGui::End();
 
-            // Clear the screen
+            // Clear the screen (full-frame)
             glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             // Compute viewports
             const glm::ivec2 fb = m_window.getFrameBufferSize();
             Viewport vpA, vpB;
-             
-            vpA = { 0,        0, fb.x / 2, fb.y };
-            vpB = { fb.x / 2, 0, fb.x - fb.x / 2, fb.y };
-            
+            vpA = { 0,        0, fb.x / 2,         fb.y };
+            vpB = { fb.x / 2, 0, fb.x - fb.x / 2,  fb.y };
+
+            // Draw one view (with lamp lighting + texture cache)
             auto drawView = [&](const Viewport& vp, const glm::mat4& P, const glm::mat4& V) {
                 glViewport(vp.x, vp.y, vp.w, vp.h);
                 glScissor (vp.x, vp.y, vp.w, vp.h);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // per-viewport clear
 
-                const glm::mat4& M  = m_modelMatrix; // your existing model transform
+                const glm::mat4& M  = m_modelMatrix;
                 const glm::mat4 mvpMatrix = P * V * M;
                 const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(M));
 
                 m_defaultShader.bind();
 
+                // lamp uniforms (your lighting)
                 glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
                 glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
 
-                glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
-                glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix)); 
+                // view/proj/model matrices (same for all meshes in this pass)
+                glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"),       1, GL_FALSE, glm::value_ptr(mvpMatrix));
+                glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"),     1, GL_FALSE, glm::value_ptr(M));
                 glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
 
-                glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
-                glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
-
-
                 for (GPUMesh& mesh : m_meshes) {
-                    m_defaultShader.bind();
-                    glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
-                    glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
-
-                    glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
-                    //Uncomment this line when you use the modelMatrix (or fragmentPosition)
-                    //glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix));
-                    glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-                    if (mesh.hasTextureCoords()) {
-                        m_texture.bind(GL_TEXTURE0);
-                        glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
-                        glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-                        glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
-                    } else {
-                        glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                        glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial);
+                    // Choose texture from cache if the mesh declares a texture path (partner's logic)
+                    bool boundTexture = false;
+                    if (!mesh.texturePath.empty()) {
+                        auto it = textureCache.find(mesh.texturePath);
+                        if (it != textureCache.end()) {
+                            it->second.bind(GL_TEXTURE0);
+                            glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
+                            glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+                            glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
+                            boundTexture = true;
+                        }
                     }
+
+                    if (!boundTexture) {
+                        // no cached texture → use material color or normal debug
+                        glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
+                        glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
+                    }
+
                     mesh.draw(m_defaultShader);
                 }
             };
 
             // Draw the two views
             const float aspectA = float(vpA.w) / float(vpA.h ? vpA.h : 1);
-            const float aspectB = float(vpB.w) / float(vpB.h);
+            const float aspectB = float(vpB.w) / float(vpB.h ? vpB.h : 1);
+
             drawView(vpA, birdsEyeProj(aspectA), birdsEyeView());
             m_bezierPath.drawCurve({vpA.x, vpA.y, vpA.w, vpA.h}, birdsEyeProj(aspectA), birdsEyeView(), glm::vec3(0.9f, 0.2f, 0.1f));
+
             drawView(vpB, freeCamProj(aspectB),  freeCamView());
             m_bezierPath.drawCurve({vpB.x, vpB.y, vpB.w, vpB.h}, freeCamProj(aspectB),  freeCamView(),  glm::vec3(0.9f, 0.2f, 0.1f));
 
@@ -319,12 +337,13 @@ private:
     Shader m_shadowShader;
 
     std::vector<GPUMesh> m_meshes;
-    Texture m_texture;
+    std::map<std::string, Texture> textureCache;
+	Texture m_texture;
     bool m_useMaterial { true };
 
     // Projection and view matrices for you to fill in and use
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
-    glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-1, 1, -1), glm::vec3(0), glm::vec3(0, 1, 0));
+    glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-6, 6, 1), glm::vec3(0), glm::vec3(0, 1, 0));
     glm::mat4 m_modelMatrix { 1.0f };
 };
 

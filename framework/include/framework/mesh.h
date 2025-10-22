@@ -30,7 +30,9 @@ struct Material {
 	// if (material.kdTexture) {
 	//   material.kdTexture->getTexel(...);
 	// }
-	std::shared_ptr<Image> kdTexture;
+	//std::shared_ptr<Image> kdTexture;
+
+	std::filesystem::path kdTexture;
 };
 
 struct Mesh {

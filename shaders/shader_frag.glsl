@@ -24,25 +24,32 @@ layout(location = 0) out vec4 fragColor;
 void main()
 {
     vec3 N = normalize(fragNormal);
-    vec3 baseColor;
 
-    if (hasTexCoords)       baseColor = texture(colorMap, fragTexCoord).rgb;
-    else if (useMaterial)   baseColor = kd;
-    else                    baseColor = normalize(fragNormal) * 0.5 + 0.5;
+    // --- Base color selection (matches your partner's behavior) ---
+    vec3 baseColor = vec3(1,0,0); // default red, if nothing else applies
+    if (hasTexCoords) {
+        baseColor = texture(colorMap, fragTexCoord).rgb;
+    } else if (useMaterial) {
+        baseColor = kd;
+    } else {
+        // normal visualization (debug)
+        baseColor = normalize(fragNormal) * 0.5 + 0.5;
+    }
 
-    // Simple point light (no attenuation for clarity; add if you like)
+    // --- Simple point light shading (your addition) ---
     vec3 L = normalize(lightPos - fragPosition);
     float NdotL = max(dot(N, L), 0.0);
 
-    // Ambient + diffuse (add specular if desired)
-    vec3 ambient = 0.05 * baseColor;
-    vec3 diffuse = baseColor * lightColor * NdotL;
+    vec3 ambient  = 0.05 * baseColor;
+    vec3 diffuse  = baseColor * lightColor * NdotL;
 
-    // Optional Blinn-Phong specular
-    vec3 V = normalize(-fragPosition);        // assuming camera at origin in world; for full correctness pass camera pos
+    // Optional Blinn-Phong specular (uses ks & shininess from UBO)
+    // For full correctness, pass camera/world eye position; here we assume near origin.
+    vec3 V = normalize(-fragPosition);
     vec3 H = normalize(L + V);
-    float spec = pow(max(dot(N, H), 0.0), max(shininess, 1.0));
-    vec3 specular = ks * lightColor * spec;
+    float specPow = max(shininess, 1.0);
+    float specAmt = pow(max(dot(N, H), 0.0), specPow);
+    vec3 specular = ks * lightColor * specAmt;
 
     fragColor = vec4(ambient + diffuse + specular, 1.0);
 }
