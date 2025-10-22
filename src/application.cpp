@@ -2,6 +2,7 @@
 #include "mesh.h"
 #include "texture.h"
 #include "tile.h";
+#include "BezierPath.h"
 // Always include window first (because it includes glfw, which includes GL which needs to be included AFTER glew).
 // Can't wait for modules to fix this stuff...
 #include <framework/disable_all_warnings.h>
@@ -78,6 +79,12 @@ public:
             shadowBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shadow_vert.glsl");
             shadowBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "Shaders/shadow_frag.glsl");
             m_shadowShader = shadowBuilder.build();
+            
+            // Init path renderer (line shader) and default closed loop
+            m_bezierPath.initGL(RESOURCE_ROOT "shaders/line_vert.glsl",
+                                RESOURCE_ROOT "shaders/line_frag.glsl");
+            m_bezierPath.setVisible(m_showCurve);
+            m_prevTime = glfwGetTime();
 
             // Any new shaders can be added below in similar fashion.
             // ==> Don't forget to reconfigure CMake when you do!
@@ -88,65 +95,207 @@ public:
             std::cerr << e.what() << std::endl;
         }
     }
+    // --- Multiple views ---
+    struct Viewport { int x, y, w, h; };
+
+    struct FreeCam {
+        glm::vec3 pos { -1.5f, 1.0f, -1.5f };
+        glm::vec3 fwd {  0.6f, -0.2f,  0.7f }; 
+        glm::vec3 up  {  0.0f, 1.0f,  0.0f };
+        double prevMouseX = 0.0, prevMouseY = 0.0;
+        bool rotating = false;
+    };
+
+    FreeCam m_freeCam;
+
+    // Bird’s-eye parameters
+    float m_birdsEyeWorldHalfSize = 2.0f;  
+    glm::vec3 m_birdsEyeCenter { 0.0f, 0.0f, 0.0f };
+    float m_birdsEyeHeight = 5.0f;
+
+    // ---- Lamp & path ----
+    BezierPath m_bezierPath;
+    bool   m_showCurve   = true;          // curve visibility toggle (mirrors BezierPath)
+    bool   m_pauseLamp   = false;         // pause animation
+    float  m_lampSpeed   = 0.15f;         // segments per second
+    float  m_pathU       = 0.0f;          // global path parameter
+    glm::vec3 m_lampPos  = {0.0f, 1.5f, 0.0f};
+    glm::vec3 m_lampColor= {10.0f, 9.0f, 7.0f}; // bright, warm
+    double m_prevTime    = 0.0;
+
+
+    // UI / control
+    bool  m_activeFreeCam = true;          // which camera gets input
+
+    glm::mat4 birdsEyeView() const {
+    return glm::lookAt(glm::vec3(m_birdsEyeCenter.x, m_birdsEyeHeight, m_birdsEyeCenter.z),
+                       m_birdsEyeCenter, glm::vec3(0, 0, -1));
+    }
+
+    glm::mat4 birdsEyeProj(float aspect) const {
+        const float sx = m_birdsEyeWorldHalfSize;
+        const float sy = m_birdsEyeWorldHalfSize / aspect;
+        return glm::ortho(-sx, +sx, -sy, +sy, 0.01f, 100.0f);
+    }
+
+    glm::mat4 freeCamView() const {
+        return glm::lookAt(m_freeCam.pos, m_freeCam.pos + m_freeCam.fwd, m_freeCam.up);
+    }
+
+    glm::mat4 freeCamProj(float aspect) const {
+        return glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
+    }
+
+    
+    float birdsEyeHalfSize = 2.0f;         // world half-extent visible in ortho
+    float birdsEyeHeight   = 5.0f;         // camera height
 
     void update()
     {
-        int dummyInteger = 0; // Initialized to 0
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        glFrontFace(GL_CCW);
+        glEnable(GL_SCISSOR_TEST);
+
+        bool  splitVertical = true;            // left/right (vs top/bottom)
+        bool  useMaterialUI = m_useMaterial;   // mirror your UI toggle
+        
+        glm::vec3 birdsEyeCenter(0.0f);
+
+        // (optional) free-cam state – if you already manage this elsewhere, remove these
+        static glm::vec3 fcPos(-1.5f, 1.0f, -1.5f);
+        static glm::vec3 fcFwd(0.6f, -0.2f, 0.7f);
+        static glm::vec3 fcUp (0.0f, 1.0f,  0.0f);
+
+        auto freeCamView = [&] {
+            return glm::lookAt(fcPos, fcPos + fcFwd, fcUp);
+        };
+        auto freeCamProj = [&](float aspect) {
+            return glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
+        };
+
+        struct Viewport { int x, y, w, h; };
+
+        int dummyInteger = 0; // demo UI
         while (!m_window.shouldClose()) {
             // This is your game loop
             // Put your real-time logic and rendering in here
             m_window.updateInput();
 
+            // --- Lamp path advance ---
+            double now = glfwGetTime();
+            float dt = float(now - m_prevTime);
+            m_prevTime = now;
+
+            if (!m_pauseLamp) {
+                m_pathU += m_lampSpeed * dt; // segments per second
+            }
+            m_lampPos = m_bezierPath.evalGlobal(m_pathU);
             // Use ImGui for easy input/output of ints, floats, strings, etc...
-            ImGui::Begin("Window");
+            ImGui::Begin("Views");
             ImGui::InputInt("This is an integer input", &dummyInteger); // Use ImGui::DragInt or ImGui::DragFloat for larger range of numbers.
-            ImGui::Text("Value is: %i", dummyInteger); // Use C printf formatting rules (%i is a signed integer)
+            ImGui::InputInt("This is an integer input", &dummyInteger); // Use ImGui::DragInt or ImGui::DragFloat for larger range of numbers.
             ImGui::Checkbox("Use material if no texture", &m_useMaterial);
+            ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
+            ImGui::SliderFloat("BirdsEye height",    &birdsEyeHeight,   1.0f, 20.0f); //don't update anything yet
+
+            ImGui::Separator();
+            ImGui::TextUnformatted("Lamp / Path");
+            if (ImGui::Checkbox("Show Bézier curve", &m_showCurve)) {
+                m_bezierPath.setVisible(m_showCurve);
+            }
+            ImGui::Checkbox("Pause lamp", &m_pauseLamp);
+            ImGui::SliderFloat("Lamp speed (segments/s)", &m_lampSpeed, 0.0f, 1.0f);
+
             ImGui::End();
 
-            // Clear the screen
+            // Clear the screen (full-frame)
             glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            // ...
-            glEnable(GL_DEPTH_TEST);
+            // Compute viewports
+            const glm::ivec2 fb = m_window.getFrameBufferSize();
+            Viewport vpA, vpB;
+            vpA = { 0,        0, fb.x / 2,         fb.y };
+            vpB = { fb.x / 2, 0, fb.x - fb.x / 2,  fb.y };
 
-            const glm::mat4 mvpMatrix = m_projectionMatrix * m_viewMatrix * m_modelMatrix;
-            // Normals should be transformed differently than positions (ignoring translations + dealing with scaling):
-            // https://paroj.github.io/gltut/Illumination/Tut09%20Normal%20Transformation.html
-            const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(m_modelMatrix));
-			for (GPUMesh& mesh : m_meshes) {
+            // Draw one view (with lamp lighting + texture cache)
+            auto drawView = [&](const Viewport& vp, const glm::mat4& P, const glm::mat4& V) {
+                glViewport(vp.x, vp.y, vp.w, vp.h);
+                glScissor (vp.x, vp.y, vp.w, vp.h);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // per-viewport clear
+
+                const glm::mat4& M  = m_modelMatrix;
+                const glm::mat4 mvpMatrix = P * V * M;
+                const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(M));
+
                 m_defaultShader.bind();
-                glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(mvpMatrix));
-                //Uncomment this line when you use the modelMatrix (or fragmentPosition)
-                //glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_modelMatrix));
-                glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-                if (!mesh.texturePath.empty()) {
-					Texture& texture = textureCache.at(mesh.texturePath);
-                    //m_texture.bind(GL_TEXTURE0);
-                    //mesh.m_texture.bind(GL_TEXTURE0);
-                    texture.bind(GL_TEXTURE0);
-                    glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
-                    glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-                    glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
-                } else {
-                    glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                    glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial);
-                }
-                mesh.draw(m_defaultShader);
-            }
 
-            // Processes input and swaps the window buffer
+                // lamp uniforms (your lighting)
+                glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
+                glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+
+                // view/proj/model matrices (same for all meshes in this pass)
+                glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"),       1, GL_FALSE, glm::value_ptr(mvpMatrix));
+                glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"),     1, GL_FALSE, glm::value_ptr(M));
+                glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
+
+                for (GPUMesh& mesh : m_meshes) {
+                    // Choose texture from cache if the mesh declares a texture path (partner's logic)
+                    bool boundTexture = false;
+                    if (!mesh.texturePath.empty()) {
+                        auto it = textureCache.find(mesh.texturePath);
+                        if (it != textureCache.end()) {
+                            it->second.bind(GL_TEXTURE0);
+                            glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
+                            glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+                            glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
+                            boundTexture = true;
+                        }
+                    }
+
+                    if (!boundTexture) {
+                        // no cached texture → use material color or normal debug
+                        glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
+                        glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
+                    }
+
+                    mesh.draw(m_defaultShader);
+                }
+            };
+
+            // Draw the two views
+            const float aspectA = float(vpA.w) / float(vpA.h ? vpA.h : 1);
+            const float aspectB = float(vpB.w) / float(vpB.h ? vpB.h : 1);
+
+            drawView(vpA, birdsEyeProj(aspectA), birdsEyeView());
+            m_bezierPath.drawCurve({vpA.x, vpA.y, vpA.w, vpA.h}, birdsEyeProj(aspectA), birdsEyeView(), glm::vec3(0.9f, 0.2f, 0.1f));
+
+            drawView(vpB, freeCamProj(aspectB),  freeCamView());
+            m_bezierPath.drawCurve({vpB.x, vpB.y, vpB.w, vpB.h}, freeCamProj(aspectB),  freeCamView(),  glm::vec3(0.9f, 0.2f, 0.1f));
+
+
             m_window.swapBuffers();
         }
     }
 
-    // In here you can handle key presses
-    // key - Integer that corresponds to numbers in https://www.glfw.org/docs/latest/group__keys.html
-    // mods - Any modifier keys pressed, like shift or control
-    void onKeyPressed(int key, int mods)
-    {
-        std::cout << "Key pressed: " << key << std::endl;
+    void onKeyPressed(int key, int mods) {
+        if (!m_activeFreeCam) return;
+
+        const float move = 0.08f;
+        glm::vec3 right = glm::normalize(glm::cross(m_freeCam.fwd, m_freeCam.up));
+        if (key == GLFW_KEY_W) m_freeCam.pos += move * m_freeCam.fwd;
+        if (key == GLFW_KEY_S) m_freeCam.pos -= move * m_freeCam.fwd;
+        if (key == GLFW_KEY_A) m_freeCam.pos -= move * right;
+        if (key == GLFW_KEY_D) m_freeCam.pos += move * right;
+        if (key == GLFW_KEY_SPACE) m_freeCam.pos += move * m_freeCam.up;
+        if (key == GLFW_KEY_C)     m_freeCam.pos -= move * m_freeCam.up;
+
+        if (key == GLFW_KEY_L) { m_showCurve = !m_showCurve; m_bezierPath.setVisible(m_showCurve); }
+        if (key == GLFW_KEY_P) { m_pauseLamp = !m_pauseLamp; }
+
+        if (key == GLFW_KEY_TAB) m_activeFreeCam = !m_activeFreeCam;
     }
 
     // In here you can handle key releases
@@ -157,26 +306,36 @@ public:
         std::cout << "Key released: " << key << std::endl;
     }
 
-    // If the mouse is moved this function will be called with the x, y screen-coordinates of the mouse
-    void onMouseMove(const glm::dvec2& cursorPos)
-    {
-        std::cout << "Mouse at position: " << cursorPos.x << " " << cursorPos.y << std::endl;
+    void onMouseMove(const glm::dvec2& cursorPos) {
+        if (!m_activeFreeCam || !m_freeCam.rotating) return;
+        const float lookSpeed = 0.0015f;
+        double dx = cursorPos.x - m_freeCam.prevMouseX;
+        double dy = cursorPos.y - m_freeCam.prevMouseY;
+        m_freeCam.prevMouseX = cursorPos.x; m_freeCam.prevMouseY = cursorPos.y;
+
+        // yaw around world up:
+        glm::mat4 yaw   = glm::rotate(glm::mat4(1.0f), float(-dx * lookSpeed), glm::vec3(0,1,0));
+        // pitch around camera right:
+        glm::vec3 right = glm::normalize(glm::cross(m_freeCam.fwd, m_freeCam.up));
+        glm::mat4 pitch = glm::rotate(glm::mat4(1.0f), float(-dy * lookSpeed), right);
+
+        glm::vec3 dir = glm::vec3(pitch * yaw * glm::vec4(m_freeCam.fwd, 0.0f));
+        m_freeCam.fwd  = glm::normalize(dir);
+        m_freeCam.up   = glm::normalize(glm::cross(glm::cross(m_freeCam.fwd, glm::vec3(0,1,0)), m_freeCam.fwd));
     }
 
-    // If one of the mouse buttons is pressed this function will be called
-    // button - Integer that corresponds to numbers in https://www.glfw.org/docs/latest/group__buttons.html
-    // mods - Any modifier buttons pressed
-    void onMouseClicked(int button, int mods)
-    {
-        std::cout << "Pressed mouse button: " << button << std::endl;
+
+    void onMouseClicked(int button, int mods) {
+        if (m_activeFreeCam && button == GLFW_MOUSE_BUTTON_LEFT) {
+            m_freeCam.rotating = true;
+            auto c = m_window.getCursorPos();
+            m_freeCam.prevMouseX = c.x; m_freeCam.prevMouseY = c.y;
+        }
     }
 
-    // If one of the mouse buttons is released this function will be called
-    // button - Integer that corresponds to numbers in https://www.glfw.org/docs/latest/group__buttons.html
-    // mods - Any modifier buttons pressed
-    void onMouseReleased(int button, int mods)
-    {
-        std::cout << "Released mouse button: " << button << std::endl;
+    void onMouseReleased(int button, int mods) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT)
+            m_freeCam.rotating = false;
     }
 
 private:
