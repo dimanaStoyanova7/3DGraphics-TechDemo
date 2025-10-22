@@ -1,6 +1,7 @@
 //#include "Image.h"
 #include "mesh.h"
 #include "texture.h"
+#include "tile.h";
 // Always include window first (because it includes glfw, which includes GL which needs to be included AFTER glew).
 // Can't wait for modules to fix this stuff...
 #include <framework/disable_all_warnings.h>
@@ -23,6 +24,7 @@ DISABLE_WARNINGS_POP()
 #include <map>
 #include <string>
 
+
 class Application {
 public:
     Application()
@@ -44,6 +46,10 @@ public:
         });
 
         m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj");
+        glm::vec3 startPoint(-5.0f, 0.0f, -5.0f);
+        glm::vec3 endPoint(5.0f, 0.0f, 5.0f);
+        Tile tile(startPoint, endPoint);
+        m_meshes.push_back(GPUMesh(tile.generateMesh()));
 
         for (GPUMesh& mesh : m_meshes) {
             if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
@@ -58,6 +64,9 @@ public:
 
             }
         }
+
+		
+        
 
         try {
             ShaderBuilder defaultBuilder;

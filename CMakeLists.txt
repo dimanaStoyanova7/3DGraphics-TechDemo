@@ -13,7 +13,7 @@ add_executable(Master_TechDemo
     "src/application.cpp"
     "src/texture.cpp"
 	"src/mesh.cpp"
-)
+ "src/tile.h" "src/tile.cpp")
 
 target_compile_definitions(Master_TechDemo PRIVATE RESOURCE_ROOT="${CMAKE_CURRENT_LIST_DIR}/")
 target_compile_features(Master_TechDemo PRIVATE cxx_std_20)
