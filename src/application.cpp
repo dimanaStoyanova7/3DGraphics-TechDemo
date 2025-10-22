@@ -19,6 +19,7 @@ DISABLE_WARNINGS_PUSH()
 DISABLE_WARNINGS_POP()
 #include <framework/shader.h>
 #include <framework/window.h>
+#include <framework/trackball.h>
 #include <functional>
 #include <iostream>
 #include <vector>
@@ -45,7 +46,6 @@ public:
             else if (action == GLFW_RELEASE)
                 onMouseReleased(button, mods);
         });
-
         m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj");
         glm::vec3 startPoint(-5.0f, 0.0f, -5.0f);
         glm::vec3 endPoint(5.0f, 0.0f, 5.0f);
@@ -65,8 +65,6 @@ public:
 
             }
         }
-
-		
         
 
         try {
@@ -122,7 +120,6 @@ public:
     glm::vec3 m_lampPos  = {0.0f, 1.5f, 0.0f};
     glm::vec3 m_lampColor= {10.0f, 9.0f, 7.0f}; // bright, warm
     double m_prevTime    = 0.0;
-
 
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
@@ -207,6 +204,8 @@ public:
             }
             ImGui::Checkbox("Pause lamp", &m_pauseLamp);
             ImGui::SliderFloat("Lamp speed (segments/s)", &m_lampSpeed, 0.0f, 1.0f);
+            ImGui::Separator();
+            ImGui::Checkbox("use trackball", &m_useTrackBall);
 
             ImGui::End();
 
@@ -228,6 +227,7 @@ public:
 
                 const glm::mat4& M  = m_modelMatrix;
                 const glm::mat4 mvpMatrix = P * V * M;
+                
                 const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(M));
 
                 m_defaultShader.bind();
@@ -268,12 +268,23 @@ public:
             // Draw the two views
             const float aspectA = float(vpA.w) / float(vpA.h ? vpA.h : 1);
             const float aspectB = float(vpB.w) / float(vpB.h ? vpB.h : 1);
+            if (m_useTrackBall) {
+                const glm::vec3 cameraPosA = m_trackball.position();
+                const glm::mat4 modelA(1.0f);
+                const glm::mat4 viewA = m_trackball.viewMatrix();
+                const glm::mat4 projA = m_trackball.projectionMatrix(); // uses the trackball's current aspect
 
-            drawView(vpA, birdsEyeProj(aspectA), birdsEyeView());
-            m_bezierPath.drawCurve({vpA.x, vpA.y, vpA.w, vpA.h}, birdsEyeProj(aspectA), birdsEyeView(), glm::vec3(0.9f, 0.2f, 0.1f));
+                drawView(vpA, projA, viewA);
+                m_bezierPath.drawCurve({ vpA.x, vpA.y, vpA.w, vpA.h }, projA, viewA, glm::vec3(0.9f, 0.2f, 0.1f));
+            }
+            else {
+                drawView(vpA, birdsEyeProj(aspectA), birdsEyeView());
+                m_bezierPath.drawCurve({ vpA.x, vpA.y, vpA.w, vpA.h }, birdsEyeProj(aspectA), birdsEyeView(), glm::vec3(0.9f, 0.2f, 0.1f));
 
-            drawView(vpB, freeCamProj(aspectB),  freeCamView());
-            m_bezierPath.drawCurve({vpB.x, vpB.y, vpB.w, vpB.h}, freeCamProj(aspectB),  freeCamView(),  glm::vec3(0.9f, 0.2f, 0.1f));
+                drawView(vpB, freeCamProj(aspectB), freeCamView());
+                m_bezierPath.drawCurve({ vpB.x, vpB.y, vpB.w, vpB.h }, freeCamProj(aspectB), freeCamView(), glm::vec3(0.9f, 0.2f, 0.1f));
+            }
+            
 
 
             m_window.swapBuffers();
@@ -349,11 +360,15 @@ private:
     std::map<std::string, Texture> textureCache;
 	Texture m_texture;
     bool m_useMaterial { true };
+	bool m_useTrackBall{ false };
 
+    Trackball m_trackball{ &m_window, glm::radians(80.0f) };
     // Projection and view matrices for you to fill in and use
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
     glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-6, 6, 1), glm::vec3(0), glm::vec3(0, 1, 0));
     glm::mat4 m_modelMatrix { 1.0f };
+    
+
 };
 
 int main()
