@@ -1,19 +1,19 @@
 #include "tile.h"
 #include <glm/glm.hpp>
-#include <algorithm> // for std::clamp if needed
+#include <algorithm> 
+//#include <iostream>
+#include <glm/gtc/matrix_transform.hpp>
 
-// Define the static member once in a single TU
+
 long Tile::next_id = 0;
 
-// Helpers (optional): interpret neighbor directions as 0:+X, 1:+Z, 2:-X, 3:-Z.
-// You can change this scheme as you like.
 
-// Constructor: just geometry; material uses defaults from header
+
 Tile::Tile(glm::vec3 start_point_, glm::vec3 end_point_)
     : id(next_id++),
     startPoint(start_point_),
     endPoint(end_point_),
-    // kd left default-initialized by header's default ctor if any; else set here:
+
     kd(0.7f, 0.7f, 0.7f),
     // ks/shininess/transparency already defaulted in header
     mesh_id(-1),
@@ -49,7 +49,6 @@ void Tile::setMaterial(glm::vec3 kd_, glm::vec3 ks_, float shininess_, float tra
 
 void Tile::setNeighbor(int direction, long neighbor_id) {
     if (direction < 0 || direction >= 4) {
-        // silently ignore or clamp; here we ignore invalid directions
         return;
     }
     neighbors[direction] = neighbor_id;
@@ -58,7 +57,6 @@ void Tile::setNeighbor(int direction, long neighbor_id) {
 Mesh Tile::generateMesh() {
     Mesh mesh;
 
-    // We assume a horizontal quad defined by opposite corners in XZ at a common Y.
     // If startPoint.y != endPoint.y, we use startPoint.y for the plane.
     float y = startPoint.y;
 
@@ -71,18 +69,21 @@ Mesh Tile::generateMesh() {
     glm::vec3 p0(x0, y, z0);
     glm::vec3 p1(x1, y, z0);
     glm::vec3 p2(x1, y, z1);
-    glm::vec3 p3(x0, y, z1);
+    glm::vec3 p3(x0, y, z1);    
 
     glm::vec3 normal(0.0f, 1.0f, 0.0f);
 
-    Vertex v0, v1, v2, v3;
-    v0.position = p0; v0.normal = normal;
-    v1.position = p1; v1.normal = normal;
-    v2.position = p2; v2.normal = normal;
-    v3.position = p3; v3.normal = normal;
+    glm::vec2 texCord0(0.0, 0.0);
+    glm::vec2 texCord1(0.0, 1.0);
+    glm::vec2 texCord2(1.0, 1.0);
+    glm::vec2 texCord3(1.0, 0.0);
 
-    // Optional: set per-vertex color if your Vertex supports it
-    // v0.color = kd; v1.color = kd; v2.color = kd; v3.color = kd;
+
+    Vertex v0, v1, v2, v3;
+    v0.position = p0; v0.normal = normal; v0.texCoord = texCord0;
+    v1.position = p1; v1.normal = normal; v1.texCoord = texCord1;
+    v2.position = p2; v2.normal = normal; v2.texCoord = texCord2;
+    v3.position = p3; v3.normal = normal; v3.texCoord = texCord3;
 
     std::vector<Vertex>& vertices = mesh.vertices;
     vertices.push_back(v0);
@@ -91,18 +92,28 @@ Mesh Tile::generateMesh() {
     vertices.push_back(v3);
 
     // Winding: counter-clockwise when looking from +Y
-    mesh.triangles.push_back(glm::uvec3(0, 1, 2));
-    mesh.triangles.push_back(glm::uvec3(0, 2, 3));
+    mesh.triangles.push_back(glm::uvec3(2, 1, 0));
+    mesh.triangles.push_back(glm::uvec3(3, 2, 0));
 
-    // Optional: set mesh material fields if your Mesh supports them
     mesh.material.kd = kd;
     mesh.material.ks = ks;
     mesh.material.shininess = shininess;
     mesh.material.transparency = transparency;
     if (!kdTexture.empty()) mesh.material.kdTexture = kdTexture;
     else {
-        mesh.material.kdTexture = RESOURCE_ROOT "resources/tileMEtal.png";
+        mesh.material.kdTexture = RESOURCE_ROOT "resources/tileMetal.png";
     }
 
     return mesh;
 }
+
+
+glm::vec3 Tile::positionInTile(float x, float z) {
+    if (x > 1 || x < 0 || z > 1 || z < 0)return startPoint;
+    glm::mat4 transformation = glm::mat4(1.0);
+    glm::vec3 tilePostion =startPoint + x * (glm::vec3(endPoint.x - startPoint.x, 0.0, 0.0)) + z * (glm::vec3(0.0, 0.0, endPoint.z - startPoint.z));
+
+    return tilePostion;
+}
+
+

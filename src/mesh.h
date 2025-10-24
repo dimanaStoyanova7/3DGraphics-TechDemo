@@ -36,6 +36,8 @@ struct GPUMaterial {
 class GPUMesh {
 public:
     GPUMesh(const Mesh& cpuMesh);
+    // construct with transformation
+    GPUMesh(const Mesh& cpuMesh, const glm::mat4& transform);
     // Cannot copy a GPU mesh because it would require reference counting of GPU resources.
     GPUMesh(const GPUMesh&) = delete;
     GPUMesh(GPUMesh&&);
@@ -44,6 +46,9 @@ public:
     // Generate a number of GPU meshes from a particular model file.
     // Multiple meshes may be generated if there are multiple sub-meshes in the file
     static std::vector<GPUMesh> loadMeshGPU(std::filesystem::path filePath, bool normalize = false);
+
+    // load with transformation
+    static std::vector<GPUMesh> loadMeshGPU(glm::mat4& transform, std::filesystem::path filePath, bool normalize = false);
 
     // Cannot copy a GPU mesh because it would require reference counting of GPU resources.
     GPUMesh& operator=(const GPUMesh&) = delete;
@@ -54,6 +59,8 @@ public:
 
     // Bind VAO and call glDrawElements.
     void draw(const Shader& drawingShader);
+
+    
     GLsizei m_numIndices{ 0 };
 
 private:
@@ -62,7 +69,9 @@ private:
 
 private:
     static constexpr GLuint INVALID = 0xFFFFFFFF;
-
+    
+    // applies a transformation to cpu mesh
+    Mesh applyTransform(const Mesh& mesh, const glm::mat4& transform);
     
     bool m_hasTextureCoords { false };
     GLuint m_ibo { INVALID };

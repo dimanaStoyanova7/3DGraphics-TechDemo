@@ -30,7 +30,8 @@ DISABLE_WARNINGS_POP()
 class Application {
 public:
     Application()
-        : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41)
+    : m_window("Final Project", glm::ivec2(1024, 1024), OpenGLVersion::GL41)
+    , m_trackball(&m_window, glm::radians(60.0f), /*dist*/ 3.0f, /*rotX*/ 0.2f, /*rotY*/ 0.8f)
         //, m_texture(RESOURCE_ROOT "resources/wall-e/Atlas_Metal.png")
     {
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods) {
@@ -47,11 +48,26 @@ public:
                 onMouseReleased(button, mods);
         });
         m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj");
+        
+        // --- Example Tile Generation ---
         glm::vec3 startPoint(-5.0f, 0.0f, -5.0f);
         glm::vec3 endPoint(5.0f, 0.0f, 5.0f);
         Tile tile(startPoint, endPoint);
         m_meshes.push_back(GPUMesh(tile.generateMesh()));
+        
+        // -- Example static object with speciffic postion generation ---
+        glm::mat4 identity = glm::mat4(1.0);
+        //identity = glm::translate(identity, startPoint);
+        //identity = glm::rotate(identity, glm::radians(60.f), glm::vec3(1.0, 0.0, 0.0));
+        identity = glm::translate(identity, tile.positionInTile(0.5, 1.0));
+        std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj"); 
 
+        for (GPUMesh& gpumesh : mm) {
+            m_meshes.emplace_back(std::move(gpumesh));
+        }
+
+        
+        // --- Create Textures ---
         for (GPUMesh& mesh : m_meshes) {
             if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
                 const std::string path = mesh.texturePath;
@@ -93,6 +109,13 @@ public:
             std::cerr << e.what() << std::endl;
         }
     }
+    // --- Camera modes ---
+    enum class CamMode { BirdsEye = 0, Follow = 1, Trackball = 2 };
+    CamMode m_camMode = CamMode::BirdsEye;
+    
+    // Follow-cam parameters (object-space offset that’s transformed by m_modelMatrix)
+    glm::vec3 m_followOffsetOS { 0.0f, 0.8f, 2.0f }; // behind & slightly above
+
     // --- Multiple views ---
     struct Viewport { int x, y, w, h; };
 
@@ -118,7 +141,7 @@ public:
     float  m_lampSpeed   = 0.15f;         // segments per second
     float  m_pathU       = 0.0f;          // global path parameter
     glm::vec3 m_lampPos  = {0.0f, 1.5f, 0.0f};
-    glm::vec3 m_lampColor= {10.0f, 9.0f, 7.0f}; // bright, warm
+    glm::vec3 m_lampColor= {1.0f, 1.0f, 1.0f}; // bright, warm
     double m_prevTime    = 0.0;
 
     // UI / control
@@ -204,8 +227,18 @@ public:
             }
             ImGui::Checkbox("Pause lamp", &m_pauseLamp);
             ImGui::SliderFloat("Lamp speed (segments/s)", &m_lampSpeed, 0.0f, 1.0f);
+            auto camModeCombo = [](const char* label, CamMode& mode) {
+                int current = static_cast<int>(mode);
+                const char* items[] = { "Birds-eye", "Follow", "Trackball" };
+                if (ImGui::Combo(label, &current, items, IM_ARRAYSIZE(items))) {
+                    mode = static_cast<CamMode>(current);
+                }
+            };
+
             ImGui::Separator();
-            ImGui::Checkbox("use trackball", &m_useTrackBall);
+            ImGui::TextUnformatted("Camera");
+            camModeCombo("Active view", m_camMode);
+
 
             ImGui::End();
 
@@ -215,16 +248,37 @@ public:
 
             // Compute viewports
             const glm::ivec2 fb = m_window.getFrameBufferSize();
-            Viewport vpA, vpB;
-            vpA = { 0,        0, fb.x / 2,         fb.y };
-            vpB = { fb.x / 2, 0, fb.x - fb.x / 2,  fb.y };
+            glViewport(0, 0, fb.x, fb.y);
+            glScissor (0, 0, fb.x, fb.y);
+
+            // ── helpers that return P and V for the active camera mode ──
+            auto getProj = [this](CamMode mode, float aspect) -> glm::mat4 {
+                if (mode == CamMode::BirdsEye)
+                    return birdsEyeProj(aspect);
+                // Trackball & Follow use perspective
+                return glm::perspective(glm::radians(60.0f), aspect, 0.01f, 100.0f);
+            };
+
+            auto getView = [this](CamMode mode) -> glm::mat4 {
+                if (mode == CamMode::BirdsEye)
+                    return birdsEyeView();
+                if (mode == CamMode::Trackball)
+                    return m_trackball.viewMatrix();
+
+                // Follow: camera at object-space offset transformed to world, looking at object origin
+                glm::vec3 objWorld = glm::vec3(m_modelMatrix * glm::vec4(0,0,0,1));
+                glm::vec3 camWorld = glm::vec3(m_modelMatrix * glm::vec4(m_followOffsetOS, 1.0f));
+                return glm::lookAt(camWorld, objWorld, glm::vec3(0,1,0));
+            };
+
+
+            // Build P & V for the currently selected mode
+            const float aspect = fb.y ? float(fb.x) / float(fb.y) : 1.0f;
+            const glm::mat4 P = getProj(m_camMode, aspect);
+            const glm::mat4 V = getView(m_camMode);
 
             // Draw one view (with lamp lighting + texture cache)
-            auto drawView = [&](const Viewport& vp, const glm::mat4& P, const glm::mat4& V) {
-                glViewport(vp.x, vp.y, vp.w, vp.h);
-                glScissor (vp.x, vp.y, vp.w, vp.h);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // per-viewport clear
-
+            {
                 const glm::mat4& M  = m_modelMatrix;
                 const glm::mat4 mvpMatrix = P * V * M;
                 
@@ -265,27 +319,8 @@ public:
                 }
             };
 
-            // Draw the two views
-            const float aspectA = float(vpA.w) / float(vpA.h ? vpA.h : 1);
-            const float aspectB = float(vpB.w) / float(vpB.h ? vpB.h : 1);
-            if (m_useTrackBall) {
-                const glm::vec3 cameraPosA = m_trackball.position();
-                const glm::mat4 modelA(1.0f);
-                const glm::mat4 viewA = m_trackball.viewMatrix();
-                const glm::mat4 projA = m_trackball.projectionMatrix(); // uses the trackball's current aspect
-
-                drawView(vpA, projA, viewA);
-                m_bezierPath.drawCurve({ vpA.x, vpA.y, vpA.w, vpA.h }, projA, viewA, glm::vec3(0.9f, 0.2f, 0.1f));
-            }
-            else {
-                drawView(vpA, birdsEyeProj(aspectA), birdsEyeView());
-                m_bezierPath.drawCurve({ vpA.x, vpA.y, vpA.w, vpA.h }, birdsEyeProj(aspectA), birdsEyeView(), glm::vec3(0.9f, 0.2f, 0.1f));
-
-                drawView(vpB, freeCamProj(aspectB), freeCamView());
-                m_bezierPath.drawCurve({ vpB.x, vpB.y, vpB.w, vpB.h }, freeCamProj(aspectB), freeCamView(), glm::vec3(0.9f, 0.2f, 0.1f));
-            }
-            
-
+            // Optional curve overlay (same P,V)
+            m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
 
             m_window.swapBuffers();
         }
@@ -309,6 +344,10 @@ public:
         if (key == GLFW_KEY_TAB) m_activeFreeCam = !m_activeFreeCam;
     }
 
+    bool trackballActive() const {
+        return m_camMode == CamMode::Trackball;
+    }
+
     // In here you can handle key releases
     // key - Integer that corresponds to numbers in https://www.glfw.org/docs/latest/group__keys.html
     // mods - Any modifier keys pressed, like shift or control
@@ -318,6 +357,7 @@ public:
     }
 
     void onMouseMove(const glm::dvec2& cursorPos) {
+        if (trackballActive()) return; 
         if (!m_activeFreeCam || !m_freeCam.rotating) return;
         const float lookSpeed = 0.0015f;
         double dx = cursorPos.x - m_freeCam.prevMouseX;
@@ -337,6 +377,7 @@ public:
 
 
     void onMouseClicked(int button, int mods) {
+        if (trackballActive()) return; 
         if (m_activeFreeCam && button == GLFW_MOUSE_BUTTON_LEFT) {
             m_freeCam.rotating = true;
             auto c = m_window.getCursorPos();
@@ -345,12 +386,16 @@ public:
     }
 
     void onMouseReleased(int button, int mods) {
+        if (trackballActive()) return; 
         if (button == GLFW_MOUSE_BUTTON_LEFT)
             m_freeCam.rotating = false;
     }
 
 private:
     Window m_window;
+    // Trackball camera (debug cam)
+    Trackball m_trackball;
+
 
     // Shader for default rendering and for depth rendering
     Shader m_defaultShader;
@@ -360,9 +405,9 @@ private:
     std::map<std::string, Texture> textureCache;
 	Texture m_texture;
     bool m_useMaterial { true };
-	bool m_useTrackBall{ false };
+	//bool m_useTrackBall{ false };
 
-    Trackball m_trackball{ &m_window, glm::radians(80.0f) };
+    //Trackball m_trackball{ &m_window, glm::radians(80.0f) };
     // Projection and view matrices for you to fill in and use
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
     glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-6, 6, 1), glm::vec3(0), glm::vec3(0, 1, 0));
