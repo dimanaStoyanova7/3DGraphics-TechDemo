@@ -63,6 +63,22 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh)
     m_numIndices = static_cast<GLsizei>(3 * cpuMesh.triangles.size());
 }
 
+
+GPUMesh::GPUMesh(const Mesh& cpuMesh, const glm::mat4& transform)
+    : GPUMesh(applyTransform(cpuMesh, transform)) // delegates properly
+{
+}
+
+Mesh GPUMesh::applyTransform(const Mesh& mesh, const glm::mat4& transform) {
+    Mesh result = mesh; // make a copy
+    for (Vertex& v : result.vertices) {
+        v.position = glm::vec3(transform * glm::vec4(v.position, 1.0f));
+        v.normal = glm::mat3(glm::transpose(glm::inverse(transform))) * v.normal;
+    }
+    return result;
+}
+
+
 GPUMesh::GPUMesh(GPUMesh&& other)
 {
     moveInto(std::move(other));
@@ -91,6 +107,20 @@ std::vector<GPUMesh> GPUMesh::loadMeshGPU(std::filesystem::path filePath, bool n
     
     return gpuMeshes;
 }
+
+std::vector<GPUMesh> GPUMesh::loadMeshGPU( glm::mat4& transform, std::filesystem::path filePath, bool normalize ) {
+    if (!std::filesystem::exists(filePath))
+        throw MeshLoadingException(fmt::format("File {} does not exist", filePath.string().c_str()));
+
+    // Generate GPU-side meshes for all sub-meshes
+    std::vector<Mesh> subMeshes = loadMesh(filePath, { .normalizeVertexPositions = normalize });
+
+    std::vector<GPUMesh> gpuMeshes;
+    for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh, transform); }
+
+    return gpuMeshes;
+}
+
 
 bool GPUMesh::hasTextureCoords() const
 {

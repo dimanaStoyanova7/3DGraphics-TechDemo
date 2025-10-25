@@ -1,6 +1,7 @@
 //#include "Image.h"
 #include "mesh.h"
 #include "texture.h"
+#include "tile.h";
 #include "BezierPath.h"
 // Always include window first (because it includes glfw, which includes GL which needs to be included AFTER glew).
 // Can't wait for modules to fix this stuff...
@@ -25,6 +26,7 @@ DISABLE_WARNINGS_POP()
 #include <map>
 #include <string>
 
+
 class Application {
 public:
     Application()
@@ -45,9 +47,27 @@ public:
             else if (action == GLFW_RELEASE)
                 onMouseReleased(button, mods);
         });
-
         m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj");
+        
+        // --- Example Tile Generation ---
+        glm::vec3 startPoint(-5.0f, 0.0f, -5.0f);
+        glm::vec3 endPoint(5.0f, 0.0f, 5.0f);
+        Tile tile(startPoint, endPoint);
+        m_meshes.push_back(GPUMesh(tile.generateMesh()));
+        
+        // -- Example static object with speciffic postion generation ---
+        glm::mat4 identity = glm::mat4(1.0);
+        //identity = glm::translate(identity, startPoint);
+        //identity = glm::rotate(identity, glm::radians(60.f), glm::vec3(1.0, 0.0, 0.0));
+        identity = glm::translate(identity, tile.positionInTile(0.5, 1.0));
+        std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj"); 
 
+        for (GPUMesh& gpumesh : mm) {
+            m_meshes.emplace_back(std::move(gpumesh));
+        }
+
+        
+        // --- Create Textures ---
         for (GPUMesh& mesh : m_meshes) {
             if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
                 const std::string path = mesh.texturePath;
@@ -61,6 +81,7 @@ public:
 
             }
         }
+        
 
         try {
             ShaderBuilder defaultBuilder;
@@ -120,9 +141,8 @@ public:
     float  m_lampSpeed   = 0.15f;         // segments per second
     float  m_pathU       = 0.0f;          // global path parameter
     glm::vec3 m_lampPos  = {0.0f, 1.5f, 0.0f};
-    glm::vec3 m_lampColor= {10.0f, 9.0f, 7.0f}; // bright, warm
+    glm::vec3 m_lampColor= {1.0f, 1.0f, 1.0f}; // bright, warm
     double m_prevTime    = 0.0;
-
 
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
@@ -261,6 +281,7 @@ public:
             {
                 const glm::mat4& M  = m_modelMatrix;
                 const glm::mat4 mvpMatrix = P * V * M;
+                
                 const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(M));
 
                 m_defaultShader.bind();
@@ -384,11 +405,15 @@ private:
     std::map<std::string, Texture> textureCache;
 	Texture m_texture;
     bool m_useMaterial { true };
+	//bool m_useTrackBall{ false };
 
+    //Trackball m_trackball{ &m_window, glm::radians(80.0f) };
     // Projection and view matrices for you to fill in and use
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
     glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-6, 6, 1), glm::vec3(0), glm::vec3(0, 1, 0));
     glm::mat4 m_modelMatrix { 1.0f };
+    
+
 };
 
 int main()
