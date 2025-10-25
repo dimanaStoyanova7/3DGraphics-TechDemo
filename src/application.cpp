@@ -26,6 +26,46 @@ DISABLE_WARNINGS_POP()
 #include <vector>
 #include <map>
 #include <string>
+#include <cmath>
+
+
+struct DynamicEnvCapture {
+    GLuint cubemap = 0;
+    GLuint fbo = 0;
+    GLuint depthRbo = 0;
+    int size = 512; // 256–1024 depending on perf
+
+    void init(int s = 512) {
+        size = s;
+        // Cubemap
+        glGenTextures(1, &cubemap);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap);
+        for (int i = 0; i < 6; ++i) {
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA8,
+                         size, size, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        }
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+
+        // FBO + depth RBO
+        glGenFramebuffers(1, &fbo);
+        glGenRenderbuffers(1, &depthRbo);
+        glBindRenderbuffer(GL_RENDERBUFFER, depthRbo);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, size, size);
+        glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    }
+};
+
+// +X, -X, +Y, -Y, +Z, -Z (dir, up)
+static const struct { glm::vec3 dir, up; } kCubeViews[6] = {
+    {{+1,0,0}, {0,-1,0}}, {{-1,0,0}, {0,-1,0}},
+    {{0,+1,0}, {0, 0,1}}, {{0,-1,0}, {0, 0,-1}},
+    {{0,0,+1}, {0,-1,0}}, {{0,0,-1}, {0,-1,0}},
+};
 
 
 class Application {
@@ -35,6 +75,7 @@ public:
     , m_trackball(&m_window, glm::radians(60.0f), /*dist*/ 3.0f, /*rotX*/ 0.2f, /*rotY*/ 0.8f)
         //, m_texture(RESOURCE_ROOT "resources/wall-e/Atlas_Metal.png")
     {
+
         m_window.registerKeyCallback([this](int key, int scancode, int action, int mods) {
             if (action == GLFW_PRESS)
                 onKeyPressed(key, mods);
@@ -69,18 +110,18 @@ public:
         // mirror obj
         glm::vec3 carPos = tile.positionInTile(0.5f, 1.0f);
         glm::vec3 sceneCtr = tile.positionInTile(0.5f, 0.5f);
-        glm::vec3 offsetFromCar = glm::vec3(0.2f, 0.1f, -0.1f);
+        glm::vec3 offsetFromCar = glm::vec3(2.0f, 0.1f, -2.7f);
         glm::vec3 desiredPos    = carPos + offsetFromCar;
 
         glm::mat4 M = glm::mat4(1.0f);
         M = glm::translate(M, desiredPos);
-        M = glm::rotate(M, glm::radians(110.0f), glm::vec3(0,1,0)); // face –Z if needed
+        M = glm::rotate(M, glm::radians(230.0f), glm::vec3(0,1,0)); // face –Z if needed
         M = glm::scale(M, glm::vec3(0.85f)); // adjust to your scene scale
         m_mirrorModel = M;
 
-        // OBJ exported from the GLB:
-        std::vector<GPUMesh> mirror = GPUMesh::loadMeshGPU(M, RESOURCE_ROOT "resources/mirror/convex_mirror.obj");
-        for (auto& g : mirror) m_mirrorMeshes.emplace_back(std::move(g));
+        m_mirrorMeshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/mirror/convex_mirror.obj");
+
+        //for (auto& g : m_mirrorMeshes) m_mirrorMeshes.emplace_back(std::move(g));
 
         
         // --- Create Textures ---
@@ -136,6 +177,7 @@ public:
                 RESOURCE_ROOT "resources/envmap/negz.png"
             };
             m_envMap.load(faces); 
+            m_dynamicEnv.init(512);
         } catch (ShaderLoadingException e) {
             std::cerr << e.what() << std::endl;
         }
@@ -184,6 +226,9 @@ public:
     CubemapTexture m_envMap;
     Shader m_envShader;
     glm::mat4 m_mirrorModel {1.0f};
+    DynamicEnvCapture m_dynamicEnv; 
+    void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V);
+    void updateDynamicEnv(const glm::vec3& probePosWS);
 
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
@@ -317,6 +362,9 @@ public:
             const float aspect = fb.y ? float(fb.x) / float(fb.y) : 1.0f;
             const glm::mat4 P = getProj(m_camMode, aspect);
             const glm::mat4 V = getView(m_camMode);
+            // updating the live env cubemap from the mirror's world position
+            glm::vec3 mirrorPosWS = glm::vec3(m_mirrorModel[3]);
+            updateDynamicEnv(mirrorPosWS);
 
             // Draw one view (with lamp lighting + texture cache)
             {
@@ -379,7 +427,8 @@ public:
 
             // TODO - MAYBE REMOVE
             glDisable(GL_CULL_FACE);
-            m_envMap.bind(GL_TEXTURE0);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, m_dynamicEnv.cubemap);
             glUniform1i(m_envShader.getUniformLocation("envMap"), 0);
 
             for (GPUMesh& mesh : m_mirrorMeshes)
@@ -483,6 +532,80 @@ private:
     
 
 };
+
+
+    void Application::renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
+    {
+        const glm::mat4& M   = m_modelMatrix;
+        const glm::mat4  MVP = P * V * M;
+        const glm::mat3  NMM = glm::inverseTranspose(glm::mat3(M));
+
+        m_defaultShader.bind();
+        glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
+        glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+        glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"),   1, GL_FALSE, glm::value_ptr(MVP));
+        glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
+        glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+
+        for (GPUMesh& mesh : m_meshes) {
+            bool boundTexture = false;
+            if (!mesh.texturePath.empty()) {
+                auto it = textureCache.find(mesh.texturePath);
+                if (it != textureCache.end()) {
+                    it->second.bind(GL_TEXTURE0);
+                    glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
+                    glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+                    glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
+                    boundTexture = true;
+                }
+            }
+            if (!boundTexture) {
+                glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
+                glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
+            }
+            mesh.draw(m_defaultShader);
+        }
+    }
+
+    void Application::updateDynamicEnv(const glm::vec3& probePosWS)
+    {
+        const glm::ivec2 fb = m_window.getFrameBufferSize();
+        GLint prevFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, m_dynamicEnv.fbo);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_dynamicEnv.depthRbo);
+
+        glViewport(0, 0, m_dynamicEnv.size, m_dynamicEnv.size);
+        glScissor (0, 0, m_dynamicEnv.size, m_dynamicEnv.size);
+
+        const glm::mat4 P = glm::perspective(glm::radians(90.0f), 1.0f, 0.05f, 100.0f);
+
+        for (int face = 0; face < 6; ++face) {
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
+                                m_dynamicEnv.cubemap, 0);
+
+            glClearColor(0,0,0,1);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            const auto& v = kCubeViews[face];
+            glm::mat4 V = glm::lookAt(probePosWS, probePosWS + v.dir, v.up);
+
+            // drawing the scene EXCEPT the mirror
+            renderSceneNoMirror(P, V);
+        }
+
+        // building mip chain for roughness LOD
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_dynamicEnv.cubemap);
+        glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+
+        // restoreingmain framebuffer + viewport
+        glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+        glViewport(0, 0, fb.x, fb.y);
+        glScissor (0, 0, fb.x, fb.y);
+    }
+
 
 int main()
 {
