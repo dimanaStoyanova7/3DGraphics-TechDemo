@@ -14,6 +14,7 @@ add_executable(Master_TechDemo
     "src/texture.cpp"
 	"src/mesh.cpp"
 	"src/BezierPath.cpp"
+	"src/cubemap.cpp"
  "src/tile.h" "src/tile.cpp")
 
 target_compile_definitions(Master_TechDemo PRIVATE RESOURCE_ROOT="${CMAKE_CURRENT_LIST_DIR}/")

@@ -1,8 +1,9 @@
 //#include "Image.h"
 #include "mesh.h"
 #include "texture.h"
-#include "tile.h";
+#include "tile.h"
 #include "BezierPath.h"
+#include "cubemap.h"
 // Always include window first (because it includes glfw, which includes GL which needs to be included AFTER glew).
 // Can't wait for modules to fix this stuff...
 #include <framework/disable_all_warnings.h>
@@ -65,6 +66,21 @@ public:
         for (GPUMesh& gpumesh : mm) {
             m_meshes.emplace_back(std::move(gpumesh));
         }
+        // mirror obj
+        glm::vec3 carPos = tile.positionInTile(0.5f, 1.0f);
+        glm::vec3 sceneCtr = tile.positionInTile(0.5f, 0.5f);
+        glm::vec3 offsetFromCar = glm::vec3(0.2f, 0.1f, -0.1f);
+        glm::vec3 desiredPos    = carPos + offsetFromCar;
+
+        glm::mat4 M = glm::mat4(1.0f);
+        M = glm::translate(M, desiredPos);
+        M = glm::rotate(M, glm::radians(110.0f), glm::vec3(0,1,0)); // face –Z if needed
+        M = glm::scale(M, glm::vec3(0.85f)); // adjust to your scene scale
+        m_mirrorModel = M;
+
+        // OBJ exported from the GLB:
+        std::vector<GPUMesh> mirror = GPUMesh::loadMeshGPU(M, RESOURCE_ROOT "resources/mirror/convex_mirror.obj");
+        for (auto& g : mirror) m_mirrorMeshes.emplace_back(std::move(g));
 
         
         // --- Create Textures ---
@@ -93,6 +109,11 @@ public:
             shadowBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shadow_vert.glsl");
             shadowBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "Shaders/shadow_frag.glsl");
             m_shadowShader = shadowBuilder.build();
+
+            ShaderBuilder envBuilder;
+            envBuilder.addStage(GL_VERTEX_SHADER,   RESOURCE_ROOT "shaders/env_vert.glsl");
+            envBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/env_frag.glsl");
+            m_envShader = envBuilder.build();
             
             // Init path renderer (line shader) and default closed loop
             m_bezierPath.initGL(RESOURCE_ROOT "shaders/line_vert.glsl",
@@ -105,10 +126,24 @@ public:
             //     Visual Studio: PROJECT => Generate Cache for ComputerGraphics
             //     VS Code: ctrl + shift + p => CMake: Configure => enter
             // ....
+
+            std::array<std::string,6> faces = {
+                RESOURCE_ROOT "resources/envmap/posx.png",
+                RESOURCE_ROOT "resources/envmap/negx.png",
+                RESOURCE_ROOT "resources/envmap/posy.png",
+                RESOURCE_ROOT "resources/envmap/negy.png",
+                RESOURCE_ROOT "resources/envmap/posz.png",
+                RESOURCE_ROOT "resources/envmap/negz.png"
+            };
+            m_envMap.load(faces); 
         } catch (ShaderLoadingException e) {
             std::cerr << e.what() << std::endl;
         }
     }
+
+    
+
+
     // --- Camera modes ---
     enum class CamMode { BirdsEye = 0, Follow = 1, Trackball = 2 };
     CamMode m_camMode = CamMode::BirdsEye;
@@ -143,6 +178,12 @@ public:
     glm::vec3 m_lampPos  = {0.0f, 1.5f, 0.0f};
     glm::vec3 m_lampColor= {1.0f, 1.0f, 1.0f}; // bright, warm
     double m_prevTime    = 0.0;
+
+    // env mapping feature
+    std::vector<GPUMesh> m_mirrorMeshes;  // the dome mirror
+    CubemapTexture m_envMap;
+    Shader m_envShader;
+    glm::mat4 m_mirrorModel {1.0f};
 
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
@@ -318,6 +359,33 @@ public:
                     mesh.draw(m_defaultShader);
                 }
             };
+            const glm::mat4& MM = m_mirrorModel;
+            const glm::mat4 MVP = P * V * MM;
+            const glm::mat3 NMM = glm::inverseTranspose(glm::mat3(MM));
+
+            // camera position from inverse view
+            glm::vec3 camPos = glm::vec3(glm::inverse(V)[3]);
+
+            m_envShader.bind();
+            glUniformMatrix4fv(m_envShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
+            glUniformMatrix4fv(m_envShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(MM));
+            glUniformMatrix3fv(m_envShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+            glUniformMatrix4fv(m_envShader.getUniformLocation("viewMatrix"), 1, GL_FALSE, glm::value_ptr(V));
+            glUniform3fv(m_envShader.getUniformLocation("cameraPos"), 1, glm::value_ptr(camPos));
+
+            glUniform1f(m_envShader.getUniformLocation("fresnelStrength"), 0.65f);
+            glUniform1f(m_envShader.getUniformLocation("roughness"), 0.05f); // nice and glossy
+
+
+            // TODO - MAYBE REMOVE
+            glDisable(GL_CULL_FACE);
+            m_envMap.bind(GL_TEXTURE0);
+            glUniform1i(m_envShader.getUniformLocation("envMap"), 0);
+
+            for (GPUMesh& mesh : m_mirrorMeshes)
+                mesh.draw(m_envShader);
+            // TODO - MAYBE REMOVE
+            glEnable(GL_CULL_FACE);
 
             // Optional curve overlay (same P,V)
             m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
