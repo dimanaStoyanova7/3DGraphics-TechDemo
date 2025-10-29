@@ -724,20 +724,13 @@ void Application::spawnTileAt(glm::ivec2 tc)
 
 void Application::updateTileStreaming()
 {
-    // 1) Where is Wall-E?
     glm::vec3 wallePos = glm::vec3(m_walleMatrix[3]);
-
-    // 2) Which tile is that?
     glm::ivec2 tc = worldToTileCoord(wallePos);
 
-    // 3) Ensure current tile exists
     spawnTileAt(tc);
 
-    // 4) If we just entered a new tile, optionally pre-spawn the 4 neighbors
     if (tc != m_currentTile) {
         m_currentTile = tc;
-        static const glm::ivec2 NBR[4] = { {+1,0}, {-1,0}, {0,+1}, {0,-1} };
-        for (auto d : NBR) spawnTileAt(tc + d);
     }
 }
 
