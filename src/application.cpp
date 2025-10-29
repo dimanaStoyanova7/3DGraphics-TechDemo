@@ -27,6 +27,7 @@ DISABLE_WARNINGS_POP()
 #include <map>
 #include <string>
 #include <cmath>
+#include <time.h>
 
 
 struct DynamicEnvCapture {
@@ -625,6 +626,12 @@ public:
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
 
+        m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
+        if (clock() - start > duration) {
+            start = clock();
+            side *= -1;
+        }
+
     }
 
 
@@ -657,6 +664,10 @@ private:
     bool m_rotateRight = false;
     float m_moveSpeed = 0.1f;
     float m_rotationSpeed = 0.5f;
+
+    int side = -1;
+    clock_t start = clock();
+    double duration = CLOCKS_PER_SEC * 0.2;
 
     glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
     
