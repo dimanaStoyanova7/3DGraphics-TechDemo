@@ -89,56 +89,11 @@ public:
             else if (action == GLFW_RELEASE)
                 onMouseReleased(button, mods);
         });
-        m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj");
-        
-        // --- Example Tile Generation ---
-        glm::vec3 startPoint(-5.0f, 0.0f, -5.0f);
-        glm::vec3 endPoint(5.0f, 0.0f, 5.0f);
-        Tile tile(startPoint, endPoint);
-        m_meshes.push_back(GPUMesh(tile.generateMesh()));
-        
-        // -- Example static object with speciffic postion generation ---
-        glm::mat4 identity = glm::mat4(1.0);
-        //identity = glm::translate(identity, startPoint);
-        //identity = glm::rotate(identity, glm::radians(60.f), glm::vec3(1.0, 0.0, 0.0));
-        identity = glm::translate(identity, tile.positionInTile(0.5, 1.0));
-        std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj"); 
-
-        for (GPUMesh& gpumesh : mm) {
-            m_meshes.emplace_back(std::move(gpumesh));
-        }
-        // mirror obj
-        glm::vec3 carPos = tile.positionInTile(0.5f, 1.0f);
-        glm::vec3 sceneCtr = tile.positionInTile(0.5f, 0.5f);
-        glm::vec3 offsetFromCar = glm::vec3(2.0f, 0.1f, -2.7f);
-        glm::vec3 desiredPos    = carPos + offsetFromCar;
-
-        glm::mat4 M = glm::mat4(1.0f);
-        M = glm::translate(M, desiredPos);
-        M = glm::rotate(M, glm::radians(230.0f), glm::vec3(0,1,0)); // face –Z if needed
-        M = glm::scale(M, glm::vec3(0.85f)); // adjust to your scene scale
-        m_mirrorModel = M;
-
-        m_mirrorMeshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/mirror/convex_mirror.obj");
 
         //for (auto& g : m_mirrorMeshes) m_mirrorMeshes.emplace_back(std::move(g));
 
-        
-        // --- Create Textures ---
-        for (GPUMesh& mesh : m_meshes) {
-            if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
-                const std::string path = mesh.texturePath;
-
-                // 1. Check if texture is already in cache
-                if (textureCache.find(path) == textureCache.end()) {
-                    // 2. Not found: Load it and insert into cache
-                    std::cout << "Loading unique texture: " << path << mesh.m_numIndices<< std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-
-            }
-        }
-        
+ // ---------------------------- Helper function to load Meshes and Textures ---------------------------
+        loadMeshesandTextures();
 
         try {
             ShaderBuilder defaultBuilder;
@@ -183,8 +138,6 @@ public:
         }
     }
 
-    
-
 
     // --- Camera modes ---
     enum class CamMode { BirdsEye = 0, Follow = 1, Trackball = 2 };
@@ -227,31 +180,9 @@ public:
     Shader m_envShader;
     glm::mat4 m_mirrorModel {1.0f};
     DynamicEnvCapture m_dynamicEnv; 
-    void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V);
-    void updateDynamicEnv(const glm::vec3& probePosWS);
 
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
-
-    glm::mat4 birdsEyeView() const {
-    return glm::lookAt(glm::vec3(m_birdsEyeCenter.x, m_birdsEyeHeight, m_birdsEyeCenter.z),
-                       m_birdsEyeCenter, glm::vec3(0, 0, -1));
-    }
-
-    glm::mat4 birdsEyeProj(float aspect) const {
-        const float sx = m_birdsEyeWorldHalfSize;
-        const float sy = m_birdsEyeWorldHalfSize / aspect;
-        return glm::ortho(-sx, +sx, -sy, +sy, 0.01f, 100.0f);
-    }
-
-    glm::mat4 freeCamView() const {
-        return glm::lookAt(m_freeCam.pos, m_freeCam.pos + m_freeCam.fwd, m_freeCam.up);
-    }
-
-    glm::mat4 freeCamProj(float aspect) const {
-        return glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
-    }
-
     
     float birdsEyeHalfSize = 2.0f;         // world half-extent visible in ortho
     float birdsEyeHeight   = 5.0f;         // camera height
@@ -283,11 +214,12 @@ public:
 
         struct Viewport { int x, y, w, h; };
 
-        int dummyInteger = 0; // demo UI
         while (!m_window.shouldClose()) {
             // This is your game loop
             // Put your real-time logic and rendering in here
             m_window.updateInput();
+            imgui();
+            updateWallePosition();
 
             // --- Lamp path advance ---
             double now = glfwGetTime();
@@ -298,35 +230,7 @@ public:
                 m_pathU += m_lampSpeed * dt; // segments per second
             }
             m_lampPos = m_bezierPath.evalGlobal(m_pathU);
-            // Use ImGui for easy input/output of ints, floats, strings, etc...
-            ImGui::Begin("Views");
-            ImGui::InputInt("This is an integer input", &dummyInteger); // Use ImGui::DragInt or ImGui::DragFloat for larger range of numbers.
-            ImGui::InputInt("This is an integer input", &dummyInteger); // Use ImGui::DragInt or ImGui::DragFloat for larger range of numbers.
-            ImGui::Checkbox("Use material if no texture", &m_useMaterial);
-            ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
-            ImGui::SliderFloat("BirdsEye height",    &birdsEyeHeight,   1.0f, 20.0f); //don't update anything yet
-
-            ImGui::Separator();
-            ImGui::TextUnformatted("Lamp / Path");
-            if (ImGui::Checkbox("Show Bézier curve", &m_showCurve)) {
-                m_bezierPath.setVisible(m_showCurve);
-            }
-            ImGui::Checkbox("Pause lamp", &m_pauseLamp);
-            ImGui::SliderFloat("Lamp speed (segments/s)", &m_lampSpeed, 0.0f, 1.0f);
-            auto camModeCombo = [](const char* label, CamMode& mode) {
-                int current = static_cast<int>(mode);
-                const char* items[] = { "Birds-eye", "Follow", "Trackball" };
-                if (ImGui::Combo(label, &current, items, IM_ARRAYSIZE(items))) {
-                    mode = static_cast<CamMode>(current);
-                }
-            };
-
-            ImGui::Separator();
-            ImGui::TextUnformatted("Camera");
-            camModeCombo("Active view", m_camMode);
-
-
-            ImGui::End();
+            
 
             // Clear the screen (full-frame)
             glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
@@ -368,24 +272,24 @@ public:
 
             // Draw one view (with lamp lighting + texture cache)
             {
-                const glm::mat4& M  = m_modelMatrix;
-                const glm::mat4 mvpMatrix = P * V * M;
-                
-                const glm::mat3 normalModelMatrix = glm::inverseTranspose(glm::mat3(M));
-
                 m_defaultShader.bind();
 
-                // lamp uniforms (your lighting)
-                glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
+                // Per-pass uniforms
+                glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
                 glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
 
-                // view/proj/model matrices (same for all meshes in this pass)
-                glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"),       1, GL_FALSE, glm::value_ptr(mvpMatrix));
-                glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"),     1, GL_FALSE, glm::value_ptr(M));
-                glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(normalModelMatrix));
-
                 for (GPUMesh& mesh : m_meshes) {
-                    // Choose texture from cache if the mesh declares a texture path (partner's logic)
+                    // Choose per-mesh model matrix
+                    glm::mat4 M = mesh.getIsMovable() ? m_walleMatrix : m_modelMatrix; 
+                    glm::mat4 MVP = P * V * M;
+                    glm::mat3 NMM = glm::inverseTranspose(glm::mat3(M));
+
+                    // Set per-mesh matrices
+                    glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
+                    glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
+                    glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+
+                    // Texture/material toggle (unchanged)
                     bool boundTexture = false;
                     if (!mesh.texturePath.empty()) {
                         auto it = textureCache.find(mesh.texturePath);
@@ -397,44 +301,16 @@ public:
                             boundTexture = true;
                         }
                     }
-
                     if (!boundTexture) {
-                        // no cached texture → use material color or normal debug
                         glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
                         glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
                     }
 
                     mesh.draw(m_defaultShader);
                 }
-            };
-            const glm::mat4& MM = m_mirrorModel;
-            const glm::mat4 MVP = P * V * MM;
-            const glm::mat3 NMM = glm::inverseTranspose(glm::mat3(MM));
+            }
 
-            // camera position from inverse view
-            glm::vec3 camPos = glm::vec3(glm::inverse(V)[3]);
-
-            m_envShader.bind();
-            glUniformMatrix4fv(m_envShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
-            glUniformMatrix4fv(m_envShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(MM));
-            glUniformMatrix3fv(m_envShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
-            glUniformMatrix4fv(m_envShader.getUniformLocation("viewMatrix"), 1, GL_FALSE, glm::value_ptr(V));
-            glUniform3fv(m_envShader.getUniformLocation("cameraPos"), 1, glm::value_ptr(camPos));
-
-            glUniform1f(m_envShader.getUniformLocation("fresnelStrength"), 0.65f);
-            glUniform1f(m_envShader.getUniformLocation("roughness"), 0.05f); // nice and glossy
-
-
-            // TODO - MAYBE REMOVE
-            glDisable(GL_CULL_FACE);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_CUBE_MAP, m_dynamicEnv.cubemap);
-            glUniform1i(m_envShader.getUniformLocation("envMap"), 0);
-
-            for (GPUMesh& mesh : m_mirrorMeshes)
-                mesh.draw(m_envShader);
-            // TODO - MAYBE REMOVE
-            glEnable(GL_CULL_FACE);
+            drawMirror(P, V);
 
             // Optional curve overlay (same P,V)
             m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
@@ -443,8 +319,9 @@ public:
         }
     }
 
+    //-----------------------Helper Functions use throughout the file ----------------------------------
     void onKeyPressed(int key, int mods) {
-        if (!m_activeFreeCam) return;
+        //if (!m_activeFreeCam) return;
 
         const float move = 0.08f;
         glm::vec3 right = glm::normalize(glm::cross(m_freeCam.fwd, m_freeCam.up));
@@ -454,6 +331,12 @@ public:
         if (key == GLFW_KEY_D) m_freeCam.pos += move * right;
         if (key == GLFW_KEY_SPACE) m_freeCam.pos += move * m_freeCam.up;
         if (key == GLFW_KEY_C)     m_freeCam.pos -= move * m_freeCam.up;
+
+        if (key == GLFW_KEY_UP)    m_moveFwd = true;
+        if (key == GLFW_KEY_DOWN)  m_moveBack = true;
+        if (key == GLFW_KEY_LEFT)  m_rotateLeft = true;
+        if (key == GLFW_KEY_RIGHT) m_rotateRight = true;
+
 
         if (key == GLFW_KEY_L) { m_showCurve = !m_showCurve; m_bezierPath.setVisible(m_showCurve); }
         if (key == GLFW_KEY_P) { m_pauseLamp = !m_pauseLamp; }
@@ -471,6 +354,11 @@ public:
     void onKeyReleased(int key, int mods)
     {
         std::cout << "Key released: " << key << std::endl;
+
+        if (key == GLFW_KEY_UP)    m_moveFwd = false;
+        if (key == GLFW_KEY_DOWN)  m_moveBack = false;
+        if (key == GLFW_KEY_LEFT)  m_rotateLeft = false;
+        if (key == GLFW_KEY_RIGHT) m_rotateRight = false;
     }
 
     void onMouseMove(const glm::dvec2& cursorPos) {
@@ -508,42 +396,131 @@ public:
             m_freeCam.rotating = false;
     }
 
-private:
-    Window m_window;
-    // Trackball camera (debug cam)
-    Trackball m_trackball;
+    void loadMeshesandTextures() {
+        // last arguemnt isMovable indicates can the object be moved by key input
+        m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj", false, true);
+
+        // --- Example Tile Generation ---
+        glm::vec3 startPoint(-5.0f, 0.0f, -5.0f);
+        glm::vec3 endPoint(5.0f, 0.0f, 5.0f);
+        Tile tile(startPoint, endPoint);
+        m_meshes.push_back(GPUMesh(tile.generateMesh()));
+
+        // -- Example static object with speciffic postion generation ---
+        glm::mat4 identity = glm::mat4(1.0);
+        identity = glm::translate(identity, tile.positionInTile(0.5, 1.0));
+        std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
+
+        for (GPUMesh& gpumesh : mm) {
+            m_meshes.emplace_back(std::move(gpumesh));
+        }
 
 
-    // Shader for default rendering and for depth rendering
-    Shader m_defaultShader;
-    Shader m_shadowShader;
-
-    std::vector<GPUMesh> m_meshes;
-    std::map<std::string, Texture> textureCache;
-	Texture m_texture;
-    bool m_useMaterial { true };
-	//bool m_useTrackBall{ false };
-
-    //Trackball m_trackball{ &m_window, glm::radians(80.0f) };
-    // Projection and view matrices for you to fill in and use
-    glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
-    glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-6, 6, 1), glm::vec3(0), glm::vec3(0, 1, 0));
-    glm::mat4 m_modelMatrix { 1.0f };
-    
-
-};
 
 
-    void Application::renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
+
+        // mirror obj
+        glm::vec3 carPos = tile.positionInTile(0.5f, 1.0f);
+        glm::vec3 sceneCtr = tile.positionInTile(0.5f, 0.5f);
+        glm::vec3 offsetFromCar = glm::vec3(2.0f, 0.1f, -2.7f);
+        glm::vec3 desiredPos = carPos + offsetFromCar;
+
+        glm::mat4 M = glm::mat4(1.0f);
+        M = glm::translate(M, desiredPos);
+        M = glm::rotate(M, glm::radians(230.0f), glm::vec3(0, 1, 0)); // face –Z if needed
+        M = glm::scale(M, glm::vec3(0.85f)); // adjust to your scene scale
+        m_mirrorModel = M;
+
+        m_mirrorMeshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/mirror/convex_mirror.obj");
+
+        // --- Create Textures ---
+        for (GPUMesh& mesh : m_meshes) {
+            if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
+                const std::string path = mesh.texturePath;
+
+                // 1. Check if texture is already in cache
+                if (textureCache.find(path) == textureCache.end()) {
+                    // 2. Not found: Load it and insert into cache
+                    std::cout << "Loading unique texture: " << path << mesh.m_numIndices << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+
+            }
+        }
+
+    }
+
+    void imgui() {
+        // Use ImGui for easy input/output of ints, floats, strings, etc...
+        ImGui::Begin("Views");
+        ImGui::Checkbox("Use material if no texture", &m_useMaterial);
+        ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
+        ImGui::SliderFloat("BirdsEye height", &birdsEyeHeight, 1.0f, 20.0f); //don't update anything yet
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Lamp / Path");
+        if (ImGui::Checkbox("Show Bézier curve", &m_showCurve)) {
+            m_bezierPath.setVisible(m_showCurve);
+        }
+        ImGui::Checkbox("Pause lamp", &m_pauseLamp);
+        ImGui::SliderFloat("Lamp speed (segments/s)", &m_lampSpeed, 0.0f, 1.0f);
+        auto camModeCombo = [](const char* label, CamMode& mode) {
+            int current = static_cast<int>(mode);
+            const char* items[] = { "Birds-eye", "Follow", "Trackball" };
+            if (ImGui::Combo(label, &current, items, IM_ARRAYSIZE(items))) {
+                mode = static_cast<CamMode>(current);
+            }
+            };
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Camera");
+        camModeCombo("Active view", m_camMode);
+
+
+        ImGui::End();
+    }
+
+    void drawMirror(const glm::mat4& P, const glm::mat4& V) {
+        const glm::mat4& MM = m_mirrorModel;
+        const glm::mat4 MVP = P * V * MM;
+        const glm::mat3 NMM = glm::inverseTranspose(glm::mat3(MM));
+
+        // camera position from inverse view
+        glm::vec3 camPos = glm::vec3(glm::inverse(V)[3]);
+
+        m_envShader.bind();
+        glUniformMatrix4fv(m_envShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
+        glUniformMatrix4fv(m_envShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(MM));
+        glUniformMatrix3fv(m_envShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+        glUniformMatrix4fv(m_envShader.getUniformLocation("viewMatrix"), 1, GL_FALSE, glm::value_ptr(V));
+        glUniform3fv(m_envShader.getUniformLocation("cameraPos"), 1, glm::value_ptr(camPos));
+
+        glUniform1f(m_envShader.getUniformLocation("fresnelStrength"), 0.65f);
+        glUniform1f(m_envShader.getUniformLocation("roughness"), 0.05f); // nice and glossy
+
+
+        // TODO - MAYBE REMOVE
+        glDisable(GL_CULL_FACE);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, m_dynamicEnv.cubemap);
+        glUniform1i(m_envShader.getUniformLocation("envMap"), 0);
+
+        for (GPUMesh& mesh : m_mirrorMeshes)
+            mesh.draw(m_envShader);
+        // TODO - MAYBE REMOVE
+        glEnable(GL_CULL_FACE);
+    }
+
+    void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
     {
-        const glm::mat4& M   = m_modelMatrix;
+        const glm::mat4& M = m_modelMatrix;
         const glm::mat4  MVP = P * V * M;
         const glm::mat3  NMM = glm::inverseTranspose(glm::mat3(M));
 
         m_defaultShader.bind();
-        glUniform3fv(m_defaultShader.getUniformLocation("lightPos"),   1, glm::value_ptr(m_lampPos));
+        glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
         glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
-        glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"),   1, GL_FALSE, glm::value_ptr(MVP));
+        glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
         glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
         glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
 
@@ -567,7 +544,7 @@ private:
         }
     }
 
-    void Application::updateDynamicEnv(const glm::vec3& probePosWS)
+    void updateDynamicEnv(const glm::vec3& probePosWS)
     {
         const glm::ivec2 fb = m_window.getFrameBufferSize();
         GLint prevFbo = 0;
@@ -577,16 +554,16 @@ private:
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_dynamicEnv.depthRbo);
 
         glViewport(0, 0, m_dynamicEnv.size, m_dynamicEnv.size);
-        glScissor (0, 0, m_dynamicEnv.size, m_dynamicEnv.size);
+        glScissor(0, 0, m_dynamicEnv.size, m_dynamicEnv.size);
 
         const glm::mat4 P = glm::perspective(glm::radians(90.0f), 1.0f, 0.05f, 100.0f);
 
         for (int face = 0; face < 6; ++face) {
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
-                                m_dynamicEnv.cubemap, 0);
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
+                m_dynamicEnv.cubemap, 0);
 
-            glClearColor(0,0,0,1);
+            glClearColor(0, 0, 0, 1);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             const auto& v = kCubeViews[face];
@@ -603,9 +580,87 @@ private:
         // restoreingmain framebuffer + viewport
         glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
         glViewport(0, 0, fb.x, fb.y);
-        glScissor (0, 0, fb.x, fb.y);
+        glScissor(0, 0, fb.x, fb.y);
     }
 
+
+    glm::mat4 birdsEyeView() const {
+        return glm::lookAt(glm::vec3(m_birdsEyeCenter.x, m_birdsEyeHeight, m_birdsEyeCenter.z),
+            m_birdsEyeCenter, glm::vec3(0, 0, -1));
+    }
+
+    glm::mat4 birdsEyeProj(float aspect) const {
+        const float sx = m_birdsEyeWorldHalfSize;
+        const float sy = m_birdsEyeWorldHalfSize / aspect;
+        return glm::ortho(-sx, +sx, -sy, +sy, 0.01f, 100.0f);
+    }
+
+    glm::mat4 freeCamView() const {
+        return glm::lookAt(m_freeCam.pos, m_freeCam.pos + m_freeCam.fwd, m_freeCam.up);
+    }
+
+    glm::mat4 freeCamProj(float aspect) const {
+        return glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
+    }
+
+    void updateWallePosition()
+    {
+        
+
+        glm::vec3 moveDir(0.0f);
+
+        if (m_moveFwd)  moveDir += fwd;
+        if (m_moveBack) moveDir -= fwd;
+
+        // Normalize movement
+        if (glm::length(moveDir) > 0.0f) {
+            moveDir = glm::normalize(moveDir) * m_moveSpeed;
+            m_walleMatrix = glm::translate(m_walleMatrix, moveDir);
+        }
+
+        // --- Rotation ---
+        // Rotate around the Y-axis (up axis)
+        if (m_rotateLeft)
+            m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
+        if (m_rotateRight)
+            m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
+
+    }
+
+
+private:
+    Window m_window;
+    // Trackball camera (debug cam)
+    Trackball m_trackball;
+
+
+    // Shader for default rendering and for depth rendering
+    Shader m_defaultShader;
+    Shader m_shadowShader;
+
+    std::vector<GPUMesh> m_meshes;
+    std::map<std::string, Texture> textureCache;
+	Texture m_texture;
+    bool m_useMaterial { true };
+	//bool m_useTrackBall{ false };
+
+    //Trackball m_trackball{ &m_window, glm::radians(80.0f) };
+    // Projection and view matrices for you to fill in and use
+    glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
+    glm::mat4 m_viewMatrix = glm::lookAt(glm::vec3(-6, 6, 1), glm::vec3(0), glm::vec3(0, 1, 0));
+    glm::mat4 m_modelMatrix { 1.0f };
+    glm::mat4 m_walleMatrix{ 1.0f };
+
+    bool m_moveFwd = false;
+    bool m_moveBack = false;
+    bool m_rotateLeft = false;
+    bool m_rotateRight = false;
+    float m_moveSpeed = 0.1f;
+    float m_rotationSpeed = 0.5f;
+
+    glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
+    
+};
 
 int main()
 {

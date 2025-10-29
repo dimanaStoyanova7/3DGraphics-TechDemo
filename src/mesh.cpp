@@ -8,6 +8,9 @@ DISABLE_WARNINGS_POP()
 #include <vector>
 #include <iostream>
 
+
+long GPUMesh::next_id = 0;
+
 GPUMaterial::GPUMaterial(const Material& material) :
     kd(material.kd),
     ks(material.ks),
@@ -16,8 +19,10 @@ GPUMaterial::GPUMaterial(const Material& material) :
 	//kdTexture(material.kdTexture)
 {}
 
-GPUMesh::GPUMesh(const Mesh& cpuMesh)
+GPUMesh::GPUMesh(const Mesh& cpuMesh, bool isMovable)
 {
+    m_id = next_id++;
+    m_isMovable = isMovable;
     // Create uniform buffer to store mesh material (https://learnopengl.com/Advanced-OpenGL/Advanced-GLSL)
     GPUMaterial gpuMaterial(cpuMesh.material);
     glGenBuffers(1, &m_uboMaterial);
@@ -60,12 +65,13 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh)
     glVertexAttribDivisor(2, 0);
 
     // Each triangle has 3 vertices.
+    std::cout << m_isMovable << std::endl;
     m_numIndices = static_cast<GLsizei>(3 * cpuMesh.triangles.size());
 }
 
 
-GPUMesh::GPUMesh(const Mesh& cpuMesh, const glm::mat4& transform)
-    : GPUMesh(applyTransform(cpuMesh, transform)) // delegates properly
+GPUMesh::GPUMesh(const Mesh& cpuMesh, const glm::mat4& transform, bool isMovable)
+    : GPUMesh(applyTransform(cpuMesh, transform), isMovable) // delegates properly
 {
 }
 
@@ -95,28 +101,30 @@ GPUMesh& GPUMesh::operator=(GPUMesh&& other)
     return *this;
 }
 
-std::vector<GPUMesh> GPUMesh::loadMeshGPU(std::filesystem::path filePath, bool normalize) {
+std::vector<GPUMesh> GPUMesh::loadMeshGPU(std::filesystem::path filePath, bool normalize, bool isMovable) {
     if (!std::filesystem::exists(filePath))
         throw MeshLoadingException(fmt::format("File {} does not exist", filePath.string().c_str()));
 
     // Generate GPU-side meshes for all sub-meshes
+    std::cout << "asdasdasd" << isMovable << std::endl;
     std::vector<Mesh> subMeshes = loadMesh(filePath, { .normalizeVertexPositions = normalize });
 
     std::vector<GPUMesh> gpuMeshes;
-    for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh); }
+    for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh, isMovable); }
     
     return gpuMeshes;
 }
 
-std::vector<GPUMesh> GPUMesh::loadMeshGPU( glm::mat4& transform, std::filesystem::path filePath, bool normalize ) {
+std::vector<GPUMesh> GPUMesh::loadMeshGPU( glm::mat4& transform, std::filesystem::path filePath, bool normalize, bool isMovable) {
     if (!std::filesystem::exists(filePath))
         throw MeshLoadingException(fmt::format("File {} does not exist", filePath.string().c_str()));
 
+    std::cout << isMovable << std::endl;
     // Generate GPU-side meshes for all sub-meshes
     std::vector<Mesh> subMeshes = loadMesh(filePath, { .normalizeVertexPositions = normalize });
 
     std::vector<GPUMesh> gpuMeshes;
-    for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh, transform); }
+    for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh, transform, isMovable); }
 
     return gpuMeshes;
 }
@@ -148,6 +156,9 @@ void GPUMesh::moveInto(GPUMesh&& other)
     m_vao = other.m_vao;
     m_uboMaterial = other.m_uboMaterial;
     texturePath = other.texturePath;
+    m_id = other.m_id;
+    m_isMovable = other.m_isMovable;
+
 
     other.m_numIndices = 0;
     other.m_hasTextureCoords = other.m_hasTextureCoords;
