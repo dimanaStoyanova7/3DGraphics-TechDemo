@@ -660,7 +660,7 @@ public:
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
 
-        m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
+        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
         if (clock() - start > duration) {
             start = clock();
             side *= -1;
