@@ -511,21 +511,21 @@ public:
         // TODO - MAYBE REMOVE
         glEnable(GL_CULL_FACE);
     }
-
     void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
     {
-        const glm::mat4& M = m_modelMatrix;
-        const glm::mat4  MVP = P * V * M;
-        const glm::mat3  NMM = glm::inverseTranspose(glm::mat3(M));
-
         m_defaultShader.bind();
         glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
         glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
-        glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
-        glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
-        glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
 
         for (GPUMesh& mesh : m_meshes) {
+            const glm::mat4 M   = mesh.getIsMovable() ? m_walleMatrix : m_modelMatrix;
+            const glm::mat4 MVP = P * V * M;
+            const glm::mat3 NMM = glm::inverseTranspose(glm::mat3(M));
+
+            glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"),        1, GL_FALSE, glm::value_ptr(MVP));
+            glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"),      1, GL_FALSE, glm::value_ptr(M));
+            glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"),1, GL_FALSE, glm::value_ptr(NMM));
+
             bool boundTexture = false;
             if (!mesh.texturePath.empty()) {
                 auto it = textureCache.find(mesh.texturePath);
@@ -672,6 +672,8 @@ private:
     glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
     
 };
+
+
 
 int main()
 {
