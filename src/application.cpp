@@ -28,7 +28,8 @@ DISABLE_WARNINGS_POP()
 #include <string>
 #include <cmath>
 #include <time.h>
-
+#include <unordered_set>
+#include <cstdint>
 
 struct DynamicEnvCapture {
     GLuint cubemap = 0;
@@ -182,6 +183,36 @@ public:
     glm::mat4 m_mirrorModel {1.0f};
     DynamicEnvCapture m_dynamicEnv; 
 
+    // tile streaming state 
+    glm::vec3 m_worldOrigin { -5.0f, 0.0f, -5.0f };  
+    float     m_tileWidth   = 10.0f;                 
+    float     m_tileDepth   = 10.0f;                 
+    glm::ivec2 m_currentTile { 0, 0 };               
+
+    std::unordered_set<std::uint64_t> m_generatedTileKeys;
+
+    static std::uint64_t tileKey(glm::ivec2 tc) {
+        return ( (std::uint64_t)( (std::int64_t)tc.x & 0xffffffff ) << 32 )
+            | ( (std::uint64_t)( (std::int64_t)tc.y & 0xffffffff )      );
+    }
+    glm::ivec2 worldToTileCoord(const glm::vec3& p) const {
+        glm::vec3 rel = p - m_worldOrigin;
+        int tx = (int)std::floor(rel.x / m_tileWidth);
+        int tz = (int)std::floor(rel.z / m_tileDepth);
+        return { tx, tz };
+    }
+    glm::vec3 tileStartWS(glm::ivec2 tc) const {
+        return m_worldOrigin + glm::vec3(tc.x * m_tileWidth, 0.0f, tc.y * m_tileDepth);
+    }
+    glm::vec3 positionInTileWS(glm::ivec2 tc, float u, float v) const {
+        glm::vec3 start = tileStartWS(tc);
+        return start + glm::vec3(u * m_tileWidth, 0.0f, v * m_tileDepth);
+    }
+
+    void spawnTileAt(glm::ivec2 tc);
+
+    void updateTileStreaming();
+
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
     
@@ -221,6 +252,7 @@ public:
             m_window.updateInput();
             imgui();
             updateWallePosition();
+            updateTileStreaming();
 
             // --- Lamp path advance ---
             double now = glfwGetTime();
@@ -401,15 +433,17 @@ public:
         // last arguemnt isMovable indicates can the object be moved by key input
         m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj", false, true);
 
-        // --- Example Tile Generation ---
-        glm::vec3 startPoint(-5.0f, 0.0f, -5.0f);
-        glm::vec3 endPoint(5.0f, 0.0f, 5.0f);
-        Tile tile(startPoint, endPoint);
-        m_meshes.push_back(GPUMesh(tile.generateMesh()));
+        m_worldOrigin = glm::vec3(-5.0f, 0.0f, -5.0f);
+        m_tileWidth   = 10.0f;
+        m_tileDepth   = 10.0f;
+        m_currentTile = { 0, 0 };
+        m_generatedTileKeys.clear();
+
+        spawnTileAt({0,0});
 
         // -- Example static object with speciffic postion generation ---
         glm::mat4 identity = glm::mat4(1.0);
-        identity = glm::translate(identity, tile.positionInTile(0.5, 1.0));
+        identity = glm::translate(identity, positionInTileWS({0,0}, 0.5f, 1.0f));
         std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
 
         for (GPUMesh& gpumesh : mm) {
@@ -421,8 +455,8 @@ public:
 
 
         // mirror obj
-        glm::vec3 carPos = tile.positionInTile(0.5f, 1.0f);
-        glm::vec3 sceneCtr = tile.positionInTile(0.5f, 0.5f);
+        glm::vec3 carPos   = positionInTileWS({0,0}, 0.5f, 1.0f);
+        glm::vec3 sceneCtr = positionInTileWS({0,0}, 0.5f, 0.5f);
         glm::vec3 offsetFromCar = glm::vec3(2.0f, 0.1f, -2.7f);
         glm::vec3 desiredPos = carPos + offsetFromCar;
 
@@ -626,7 +660,7 @@ public:
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
 
-        m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
+        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
         if (clock() - start > duration) {
             start = clock();
             side *= -1;
@@ -672,6 +706,34 @@ private:
     glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
     
 };
+void Application::spawnTileAt(glm::ivec2 tc)
+{
+    const std::uint64_t key = tileKey(tc);
+    if (m_generatedTileKeys.find(key) != m_generatedTileKeys.end())
+        return; // already exists
+
+    // Build a CPU tile from bounds and push its GPUMesh into m_meshes
+    glm::vec3 start = tileStartWS(tc);
+    glm::vec3 end   = start + glm::vec3(m_tileWidth, 0.0f, m_tileDepth);
+
+    Tile t(start, end);
+    m_meshes.emplace_back(GPUMesh(t.generateMesh()));
+
+    m_generatedTileKeys.insert(key);
+}
+
+void Application::updateTileStreaming()
+{
+    glm::vec3 wallePos = glm::vec3(m_walleMatrix[3]);
+    glm::ivec2 tc = worldToTileCoord(wallePos);
+
+    spawnTileAt(tc);
+
+    if (tc != m_currentTile) {
+        m_currentTile = tc;
+    }
+}
+
 
 
 
