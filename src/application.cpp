@@ -30,6 +30,7 @@ DISABLE_WARNINGS_POP()
 #include <time.h>
 #include <unordered_set>
 #include <cstdint>
+#include <random>
 
 struct DynamicEnvCapture {
     GLuint cubemap = 0;
@@ -640,33 +641,27 @@ public:
 
     void updateWallePosition()
     {
-        
+        glm::vec3 fwdWS = glm::normalize(glm::vec3(m_walleMatrix * glm::vec4(0,0,-1,0)));
+        fwdWS.y = 0.0f;
+        if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
 
         glm::vec3 moveDir(0.0f);
-
-        if (m_moveFwd)  moveDir += fwd;
-        if (m_moveBack) moveDir -= fwd;
-
-        // Normalize movement
-        if (glm::length(moveDir) > 0.0f) {
-            moveDir = glm::normalize(moveDir) * m_moveSpeed;
-            m_walleMatrix = glm::translate(m_walleMatrix, moveDir);
-        }
-
-        // --- Rotation ---
-        // Rotate around the Y-axis (up axis)
+        if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
+        if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
+        glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
+        glm::vec3 nextPos = currPos + moveDir;
         if (m_rotateLeft)
             m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
 
-        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
-        if (clock() - start > duration) {
-            start = clock();
-            side *= -1;
-        }
-
+        glm::vec3 delta = nextPos - currPos;
+        m_walleMatrix = glm::translate(m_walleMatrix, delta);
+        glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
+        depenetrateXZ(posWS);
+        m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
     }
+
 
 
 private:
@@ -704,6 +699,53 @@ private:
     double duration = CLOCKS_PER_SEC * 0.2;
 
     glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
+
+    struct Obstacle {
+        glm::ivec2 tile;   // which tile it belongs to
+        glm::vec3  posWS;  // world position (center on ground)
+        float      radius; // for 2D circle collision
+    };
+
+    std::vector<Obstacle> m_obstacles;
+
+    std::mt19937 m_rng { std::random_device{}() };
+
+    const std::string m_propBarrier = RESOURCE_ROOT "resources/props/road_block_a/road_block_a.obj";
+
+    // helpers
+    void maybeSpawnObstacle(glm::ivec2 tc);
+    static float distXZ(const glm::vec3& a, const glm::vec3& b) {
+        glm::vec2 da(a.x - b.x, a.z - b.z);
+        return glm::length(da);
+    }
+
+    void depenetrateXZ(glm::vec3& posWS) {
+        const float walleRadius = 0.45f;     
+        const float skin        = 1e-3f;    
+        for (int iter = 0; iter < 4; ++iter) {
+            bool corrected = false;
+
+            for (const auto& obs : m_obstacles) {
+                glm::vec2 p(posWS.x - obs.posWS.x, posWS.z - obs.posWS.z);
+                float d2 = glm::dot(p, p);
+                float minR = walleRadius + obs.radius;
+                float minR2 = minR * minR;
+
+                if (d2 < minR2) {
+                    float d = std::sqrt(std::max(d2, 1e-8f));
+                    glm::vec2 n = (d > 1e-6f) ? (p / d) : glm::vec2(1.0f, 0.0f); // fallback normal
+                    float push = (minR - d) + skin;
+
+                    // push out along normal
+                    posWS.x += n.x * push;
+                    posWS.z += n.y * push;
+                    corrected = true;
+                }
+            }
+            if (!corrected) break;
+        }
+    }
+
     
 };
 void Application::spawnTileAt(glm::ivec2 tc)
@@ -720,6 +762,8 @@ void Application::spawnTileAt(glm::ivec2 tc)
     m_meshes.emplace_back(GPUMesh(t.generateMesh()));
 
     m_generatedTileKeys.insert(key);
+    maybeSpawnObstacle(tc);
+
 }
 
 void Application::updateTileStreaming()
@@ -734,6 +778,53 @@ void Application::updateTileStreaming()
     }
 }
 
+void Application::maybeSpawnObstacle(glm::ivec2 tc)
+{
+    if (tc == glm::ivec2(0, 0)) return;
+
+    std::uniform_real_distribution<float> p01(0.0f, 1.0f);
+    if (p01(m_rng) > 0.5f) return;
+
+    static const glm::vec2 slots[9] = {
+        {0.50f,0.50f},
+        {0.15f,0.15f}, {0.85f,0.15f}, {0.15f,0.85f}, {0.85f,0.85f},
+        {0.50f,0.15f}, {0.50f,0.85f}, {0.15f,0.50f}, {0.85f,0.50f}
+    };
+    std::uniform_int_distribution<int> slotPick(0, 8);
+    glm::vec2 uv = slots[slotPick(m_rng)];
+
+    glm::vec3 posWS = positionInTileWS(tc, uv.x, uv.y);
+
+    const float tileY = tileStartWS(tc).y;
+    const float barrierHalfHeight = 0.95f; 
+    posWS.y = tileY + barrierHalfHeight;
+
+    std::uniform_real_distribution<float> yawDeg(0.0f, 360.0f);
+    float yaw = glm::radians(yawDeg(m_rng));
+
+    const std::string file = m_propBarrier;
+    const glm::vec3   scale(1.0f);
+    // --- visual mesh ---
+    glm::mat4 M(1.0f);
+    M = glm::translate(M, posWS);
+    M = glm::rotate(M, yaw, glm::vec3(0,1,0));
+    M = glm::scale(M, scale);
+    auto propMeshes = GPUMesh::loadMeshGPU(M, file);
+    for (auto& g : propMeshes) m_meshes.emplace_back(std::move(g));
+
+    const float halfLen   = 3.00f; // half of barrier length along its long axis
+    const float halfWidth = 0.95f; // ~half its width; this is the circle radius
+
+    glm::vec3 fwd = glm::normalize(glm::vec3(std::cos(yaw), 0.0f, std::sin(yaw)));
+
+    glm::vec3 endA = posWS - fwd * halfLen;
+    glm::vec3 endB = posWS + fwd * halfLen;
+
+    // register colliders (XZ only; y is ignored elsewhere)
+    m_obstacles.push_back(Obstacle{ tc, endA, halfWidth });
+    m_obstacles.push_back(Obstacle{ tc, posWS, halfWidth }); 
+    m_obstacles.push_back(Obstacle{ tc, endB, halfWidth });
+}
 
 
 
