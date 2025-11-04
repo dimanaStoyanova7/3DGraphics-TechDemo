@@ -99,6 +99,7 @@ public:
         try {
             ShaderBuilder defaultBuilder;
             defaultBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shader_vert.glsl");
+            defaultBuilder.addStage(GL_GEOMETRY_SHADER, RESOURCE_ROOT "shaders/shader_geom.glsl");
             defaultBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shader_frag.glsl");
             m_defaultShader = defaultBuilder.build();
 
@@ -275,12 +276,7 @@ public:
             {
                 m_defaultShader.bind();
 
-                // Per-pass uniforms
-                glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
-                glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
-                //replace with proper camera logic
-                glUniform3fv(m_defaultShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_trackball.position()));
-                glUniform1i(m_defaultShader.getUniformLocation("pbr"), m_pbr);
+                setCommonUniforms(m_defaultShader, P);
 
                 for (GPUMesh& mesh : m_meshes) {
                     // Choose per-mesh model matrix
@@ -291,7 +287,7 @@ public:
                     // Set per-mesh matrices
                     glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
                     glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
-                    glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+                    glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));                    
 
                     // Texture/material toggle (unchanged)
                     bool boundTexture = false;
@@ -319,7 +315,7 @@ public:
                 }
             }
 
-            //drawMirror(P, V);
+            drawMirror(P, V);
 
             // Optional curve overlay (same P,V)
             m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
@@ -491,7 +487,34 @@ public:
                 }
             }
         }
+    }
 
+    void setCommonUniforms(Shader& shader, const glm::mat4& P) {
+        // Per-pass uniforms - g because used in geometry shader and then passed
+        glUniform3fv(shader.getUniformLocation("glightPos"), 1, glm::value_ptr(m_lampPos));
+        glUniform3fv(shader.getUniformLocation("gcolor"), 1, glm::value_ptr(m_lampColor));
+        //replace with proper camera logic
+
+        glm::vec3 camera_position = getCameraPosition();
+        glUniform3fv(shader.getUniformLocation("gcamPos"), 1, glm::value_ptr(camera_position));
+
+        // use prb and nm
+        glUniform1i(shader.getUniformLocation("pbr"), m_pbr);
+        glUniform1i(shader.getUniformLocation("nm"), m_normalMapping);
+
+        if (m_normalMapping)glUniformMatrix4fv(m_defaultShader.getUniformLocation("gprojection"), 1, GL_FALSE, glm::value_ptr(P));
+    }
+
+    glm::vec3 getCameraPosition() {
+        if (m_camMode == CamMode::BirdsEye){
+            return glm::vec3(m_birdsEyeCenter.x, m_birdsEyeHeight, m_birdsEyeCenter.z);
+        }
+        else if (m_camMode == CamMode::Follow) {
+            return m_freeCam.pos;
+        }
+        else {
+            return m_trackball.position();
+        }
 
     }
 
@@ -506,6 +529,7 @@ public:
         ImGui::SliderFloat("BirdsEye height", &birdsEyeHeight, 1.0f, 20.0f); //don't update anything yet
 
         ImGui::Checkbox("PBR", &m_pbr);
+        ImGui::Checkbox("Normla mapping", &m_normalMapping);
 
         ImGui::Separator();
         ImGui::TextUnformatted("Lamp / Path");
@@ -542,7 +566,7 @@ public:
         glUniformMatrix4fv(m_envShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
         glUniformMatrix4fv(m_envShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(MM));
         glUniformMatrix3fv(m_envShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
-        glUniformMatrix4fv(m_envShader.getUniformLocation("viewMatrix"), 1, GL_FALSE, glm::value_ptr(V));
+        //glUniformMatrix4fv(m_envShader.getUniformLocation("viewMatrix"), 1, GL_FALSE, glm::value_ptr(V));
         glUniform3fv(m_envShader.getUniformLocation("cameraPos"), 1, glm::value_ptr(camPos));
 
         glUniform1f(m_envShader.getUniformLocation("fresnelStrength"), 0.65f);
@@ -568,12 +592,12 @@ public:
         const glm::mat3  NMM = glm::inverseTranspose(glm::mat3(M));
 
         m_defaultShader.bind();
-        glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
-        glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+     
         glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
         glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
         glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
-        glUniform1i(m_defaultShader.getUniformLocation("pbr"), m_pbr);
+
+        setCommonUniforms(m_defaultShader, P);
 
         for (GPUMesh& mesh : m_meshes) {
             bool boundTexture = false;
@@ -738,6 +762,7 @@ private:
     glm::mat4 m_walleMatrix{ 1.0f };
 
     bool m_pbr = false;
+    bool m_normalMapping = false;
     bool m_moveFwd = false;
     bool m_moveBack = false;
     bool m_rotateLeft = false;

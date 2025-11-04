@@ -21,16 +21,17 @@ uniform bool hasRoughnessTexture;
 uniform bool hasNormalMap;
 
 uniform bool pbr;
+uniform bool nm;
 
 uniform bool useMaterial;
 
 in vec3 fragPosition;
 in vec3 fragNormal;
 in vec2 fragTexCoord;
-
-uniform vec3 lightPos;    // world-space lamp position
-uniform vec3 lightColor;  // e.g., (10,9,7) for a bright warm light
-uniform vec3 viewPos;
+in vec3 lightPos;
+in vec3 camPos;
+in vec3 lightColor;
+in vec3 fragCrntPos;
 
 const float PI = 3.14159265359;
 
@@ -82,10 +83,16 @@ void main()
 
 {
     // --- PBR ---
-    vec3 V = normalize(viewPos - fragPosition);
+    vec3 V = normalize(camPos - fragPosition);
     vec3 L = normalize(lightPos - fragPosition);
     vec3 H = normalize(L + V);
+    
     vec3 N = normalize(fragNormal);
+    
+    if(nm){   
+        N = texture(normalMap, fragTexCoord).rgb;
+        N = N * 2.0 - 1.0;
+     }
 
     float metallic  = 0.0;   // non-metal surface (plastic, wood, fabric)
     float roughness = 0.5;   // moderately rough (not glossy, not matte)
@@ -104,7 +111,7 @@ void main()
         // normal visualization (debug)
         baseColor = normalize(fragNormal) * 0.5 + 0.5;
     }
-
+    
     float NdotL = max(dot(N, L), 0.0);
     if(pbr){
         vec3 F0 = vec3(0.04); 
