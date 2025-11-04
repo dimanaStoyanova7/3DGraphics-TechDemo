@@ -56,6 +56,12 @@ public:
 
     bool hasTextureCoords() const;
     std::string texturePath;
+    std::string ambientTexture;
+    std::string metalnessTexture;
+    std::string roughnessTexture;
+    std::string normalMap;
+
+
     void setMeshID(long id_) { m_id = id_; }
     long getMeshID() const { return m_id; }
 
@@ -83,6 +89,10 @@ private:
     long m_id;
     bool m_isMovable{ false };
     bool m_hasTextureCoords { false };
+    bool m_hasAmbientTexture{ false };
+    bool m_hasMetalnessTexture{ false };
+    bool m_hasRoughnessTexture{ false };
+    bool m_hasNormalMap{ false };
     GLuint m_ibo { INVALID };
     GLuint m_vbo { INVALID };
     GLuint m_vao { INVALID };

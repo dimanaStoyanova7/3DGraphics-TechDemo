@@ -278,6 +278,9 @@ public:
                 // Per-pass uniforms
                 glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
                 glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+                //replace with proper camera logic
+                glUniform3fv(m_defaultShader.getUniformLocation("viewPos"), 1, glm::value_ptr(m_trackball.position()));
+                glUniform1i(m_defaultShader.getUniformLocation("pbr"), m_pbr);
 
                 for (GPUMesh& mesh : m_meshes) {
                     // Choose per-mesh model matrix
@@ -292,26 +295,31 @@ public:
 
                     // Texture/material toggle (unchanged)
                     bool boundTexture = false;
-                    if (!mesh.texturePath.empty()) {
-                        auto it = textureCache.find(mesh.texturePath);
-                        if (it != textureCache.end()) {
-                            it->second.bind(GL_TEXTURE0);
-                            glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
-                            glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-                            glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
-                            boundTexture = true;
-                        }
-                    }
+                   
+                    // Diffuse map
+                    bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
+
+                    // Ambient map
+                    bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
+
+                    // Metalness map
+                    bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
+
+                    // Roughness map
+                    bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
+
+                    // Normal map
+                    bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
+
                     if (!boundTexture) {
                         glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
                         glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
                     }
-
                     mesh.draw(m_defaultShader);
                 }
             }
 
-            drawMirror(P, V);
+            //drawMirror(P, V);
 
             // Optional curve overlay (same P,V)
             m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
@@ -416,10 +424,6 @@ public:
             m_meshes.emplace_back(std::move(gpumesh));
         }
 
-
-
-
-
         // mirror obj
         glm::vec3 carPos = tile.positionInTile(0.5f, 1.0f);
         glm::vec3 sceneCtr = tile.positionInTile(0.5f, 0.5f);
@@ -436,27 +440,72 @@ public:
 
         // --- Create Textures ---
         for (GPUMesh& mesh : m_meshes) {
+
+            // Diffuse / color map
             if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
                 const std::string path = mesh.texturePath;
-
-                // 1. Check if texture is already in cache
                 if (textureCache.find(path) == textureCache.end()) {
-                    // 2. Not found: Load it and insert into cache
-                    std::cout << "Loading unique texture: " << path << mesh.m_numIndices << std::endl;
+                    std::cout << "Loading unique diffuse texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
                     textureCache.emplace(path, Texture(path));
                 }
+            }
 
+            // Ambient map
+            if (!mesh.ambientTexture.empty()) {
+                const std::string path = mesh.ambientTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique ambient texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Metalness map
+            if (!mesh.metalnessTexture.empty()) {
+                const std::string path = mesh.metalnessTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique metalness texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Roughness map
+            if (!mesh.roughnessTexture.empty()) {
+                const std::string path = mesh.roughnessTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique roughness texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Normal map
+            if (!mesh.normalMap.empty()) {
+                const std::string path = mesh.normalMap;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique normal map: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
             }
         }
+
 
     }
 
     void imgui() {
         // Use ImGui for easy input/output of ints, floats, strings, etc...
+
+        
+
         ImGui::Begin("Views");
         ImGui::Checkbox("Use material if no texture", &m_useMaterial);
         ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
         ImGui::SliderFloat("BirdsEye height", &birdsEyeHeight, 1.0f, 20.0f); //don't update anything yet
+
+        ImGui::Checkbox("PBR", &m_pbr);
 
         ImGui::Separator();
         ImGui::TextUnformatted("Lamp / Path");
@@ -524,19 +573,27 @@ public:
         glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
         glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
         glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+        glUniform1i(m_defaultShader.getUniformLocation("pbr"), m_pbr);
 
         for (GPUMesh& mesh : m_meshes) {
             bool boundTexture = false;
-            if (!mesh.texturePath.empty()) {
-                auto it = textureCache.find(mesh.texturePath);
-                if (it != textureCache.end()) {
-                    it->second.bind(GL_TEXTURE0);
-                    glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
-                    glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-                    glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
-                    boundTexture = true;
-                }
-            }
+ 
+
+            // Diffuse map
+            bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords",  boundTexture);
+
+            // Ambient map
+            bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
+
+            // Metalness map
+            bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
+
+            // Roughness map
+            bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
+
+            // Normal map
+            bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
+
             if (!boundTexture) {
                 glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
                 glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
@@ -625,13 +682,35 @@ public:
             m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-
-        m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
+        
+        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
+        
         if (clock() - start > duration) {
             start = clock();
             side *= -1;
         }
 
+    }
+
+    void bindTextureIfAvailable(
+        const std::string& texturePath,
+        Shader& shader,
+        const std::string& uniformName,
+        GLenum textureUnit,
+        const std::string& hasTextureName,
+        bool& boundFlag)
+    {
+        if (texturePath.empty())
+            return;
+
+        auto it = textureCache.find(texturePath);
+        if (it != textureCache.end()) {
+            it->second.bind(textureUnit);
+            glUniform1i(shader.getUniformLocation(uniformName), textureUnit - GL_TEXTURE0);
+            glUniform1i(m_defaultShader.getUniformLocation(hasTextureName), GL_TRUE);
+            glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
+            boundFlag = true;
+        }
     }
 
 
@@ -658,6 +737,7 @@ private:
     glm::mat4 m_modelMatrix { 1.0f };
     glm::mat4 m_walleMatrix{ 1.0f };
 
+    bool m_pbr = false;
     bool m_moveFwd = false;
     bool m_moveBack = false;
     bool m_rotateLeft = false;

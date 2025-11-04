@@ -134,6 +134,19 @@ std::vector<Mesh> loadMesh(const std::filesystem::path& file, const LoadMeshSett
                 if (!objMaterial.diffuse_texname.empty()) {
                     mesh.material.kdTexture = baseDir / objMaterial.diffuse_texname;
                 }
+                if (!objMaterial.ambient_texname.empty()) {
+                    mesh.material.ambientTexture = baseDir / objMaterial.ambient_texname;
+                }
+                if (!objMaterial.metallic_texname.empty()) {
+                    mesh.material.metalnessTexture = baseDir / objMaterial.metallic_texname;
+                }
+                if (!objMaterial.roughness_texname.empty()) {
+                    mesh.material.roughnessTexture = baseDir / objMaterial.roughness_texname;
+                }
+                if (!objMaterial.normal_texname.empty()) {
+                    mesh.material.normalMap = baseDir / objMaterial.normal_texname;
+                }
+              
                 mesh.material.ks = construct_vec3(objMaterial.specular);
                 mesh.material.shininess = objMaterial.shininess;
                 mesh.material.transparency = objMaterial.dissolve;
