@@ -9,11 +9,11 @@ Ka 1 1 1
 Kd 1 1 1
 Ke 0 0 0
 map_Kd Atlas_Metal_albedo.jpeg
-map_Pm Atlas_Metal_metallic.jpeg      # metalness
-map_Pr Atlas_Metal_roughness.jpeg     # roughness
-norm    Atlas_Metal_normal.png        # normal map (tangent space)
-map_Ka  Atlas_Metal_AO.jpeg           # ambient occlusion (non-standard but often used)
-map_d   Atlas_Metal_opacity.jpeg      # opacity (alpha)
+map_Pm Atlas_Metal_metallic.jpeg 
+map_Pr Atlas_Metal_roughness.jpeg    
+norm    Atlas_Metal_normal.png
+map_Ka  Atlas_Metal_AO.jpeg
+map_d   Atlas_Metal_opacity.jpeg
 
 # --- Atlas_Painted_metal ---
 newmtl Atlas_Painted_metal
