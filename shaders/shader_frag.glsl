@@ -32,7 +32,7 @@ in vec3 lightPos;
 in vec3 camPos;
 in vec3 lightColor;
 in vec3 fragCrntPos;
-in mat3 TBN;
+//in mat3 TBN;
 
 const float PI = 3.14159265359;
 
@@ -93,7 +93,7 @@ void main()
     if(nm && hasNormalMap){   
         N = texture(normalMap, fragTexCoord).rgb;
         N = N * 2.0 - 1.0;
-        N = normalize(TBN * N); 
+        //N = normalize(TBN * N); 
      }
 
     float metallic  = 0.0;   // non-metal surface (plastic, wood, fabric)
