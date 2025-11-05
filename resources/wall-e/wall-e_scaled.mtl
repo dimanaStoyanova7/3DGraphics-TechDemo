@@ -1,35 +1,46 @@
-# Blender 4.5.3 LTS MTL File: 'None'
-# www.blender.org
+# MTL file - created by a modified js OBJExporter
 
+# --- Atlas_Metal ---
 newmtl Atlas_Metal
-Ka 1.000000 1.000000 1.000000
-Ks 0.000000 0.000000 0.000000
-Ke 0.000000 0.000000 0.000000
-Ni 1.500000
-d 1.000000
+Tr 0.0000
+Tf 1.0000 1.0000 1.0000
 illum 1
-map_Kd Atlas_Metal.png
-map_Ns metalnessMap1.png
-map_refl metalnessMap1.png
+Ka 1 1 1
+Kd 1 1 1
+Ke 0 0 0
+map_Kd Atlas_Metal_albedo.jpeg
+map_Pm Atlas_Metal_metallic.jpeg 
+map_Pr Atlas_Metal_roughness.jpeg    
+norm    Atlas_Metal_normal.png
+map_Ka  Atlas_Metal_AO.jpeg
+map_d   Atlas_Metal_opacity.jpeg
 
+# --- Atlas_Painted_metal ---
 newmtl Atlas_Painted_metal
-Ka 1.000000 1.000000 1.000000
-Ks 0.000000 0.000000 0.000000
-Ke 0.000000 0.000000 0.000000
-Ni 1.500000
-d 1.000000
+Tr 0.0000
+Tf 1.0000 1.0000 1.0000
 illum 1
-map_Kd Atlas_Painted_metal.png
-map_Ns metalnessMap2.png
-map_refl metalnessMap2.png
+Ka 1 1 1
+Kd 1 1 1
+Ke 0 0 0
+map_Kd Atlas_Painted_metal_albedo.jpeg
+map_Pm Atlas_Painted_metal_metallic.jpeg
+map_Pr Atlas_Painted_metal_roughness.jpeg
+norm    Atlas_Painted_metal_normal.png
+map_Ka  Atlas_Painted_metal_AO.jpeg
+map_d   Atlas_Painted_metal_opacity.jpeg
 
+# --- Tread ---
 newmtl Tread
-Ka 1.000000 1.000000 1.000000
-Ks 0.000000 0.000000 0.000000
-Ke 0.000000 0.000000 0.000000
-Ni 1.500000
-d 1.000000
+Tr 0.0000
+Tf 1.0000 1.0000 1.0000
 illum 1
-map_Kd Tread.png
-map_Ns metalnessMap3.png
-map_refl metalnessMap3.png
+Ka 1 1 1
+Kd 1 1 1
+Ke 0 0 0
+map_Kd Tread_albedo.jpeg
+map_Pm Tread_metallic.jpeg
+map_Pr Tread_roughness.jpeg
+norm    Tread_normal.png
+map_Ka  Tread_AO.jpeg
+map_d   Tread_opacity.jpeg
