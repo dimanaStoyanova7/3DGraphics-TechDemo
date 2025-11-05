@@ -70,6 +70,18 @@ static const struct { glm::vec3 dir, up; } kCubeViews[6] = {
 };
 
 
+struct RobotArm {
+    // Index lists for each sub-part
+    std::array<int, 12> base{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+    std::array<int, 4>  first{ 13, 14, 15, 16 };
+    std::array<int, 10> second{ 17, 18, 19, 20, 21, 22, 23, 24, 25, 26 };
+    std::array<int, 5>  third{ 27, 28, 29, 30, 31 };
+    std::array<int, 8>  hand{ 32, 33, 34, 35, 36, 37, 38, 39 };
+
+    long indexOffset{ 0 };  // offset in your index buffer, if needed
+};
+
+
 class Application {
 public:
     Application()
@@ -344,13 +356,17 @@ public:
                         glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
                     }
                     mesh.draw(m_defaultShader);
+                    for (int i = 0; i < 8; ++i) {
+                        glActiveTexture(GL_TEXTURE0 + i);
+                        glBindTexture(GL_TEXTURE_2D, 0);
+                    }
                 }
             }
 
-            drawMirror(P, V);
+            //drawMirror(P, V);
 
             // Optional curve overlay (same P,V)
-            m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
+            //m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
 
             m_window.swapBuffers();
         }
@@ -448,12 +464,24 @@ public:
         // -- Example static object with speciffic postion generation ---
         glm::mat4 identity = glm::mat4(1.0);
         identity = glm::translate(identity, positionInTileWS({0,0}, 0.5f, 1.0f));
-        std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
+        //std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
+
+        identity = glm::scale(glm::rotate(identity, glm::radians(90.0f), glm::vec3(1.0, 0.0, 0.0)), glm::vec3(4.0));
+        std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/robotArm/arm.obj");
 
         for (GPUMesh& gpumesh : mm) {
-            m_meshes.emplace_back(std::move(gpumesh));
+          m_meshes.emplace_back(std::move(gpumesh));
         }
+          //for (int i = 27; i < 32; i++) {
+            //    m_meshes.emplace_back(std::move(mm[i]));
+          //}
 
+         // 0, 1, 2, 3, 4, 5, 6, 7, 8,, 9 ,10 ,11,
+         // 13, 14 , 15, 16
+         // 17, 18, 19, 20, 21, 22 ,23, 24, 25, 26
+         // 27, 28, 29, 30, 31
+         // 32, 33, 34, 35, 36, 37 ,38, 39
+            
         // mirror obj
         glm::vec3 carPos   = positionInTileWS({0,0}, 0.5f, 1.0f);
         glm::vec3 sceneCtr = positionInTileWS({0,0}, 0.5f, 0.5f);
@@ -687,7 +715,7 @@ public:
             glm::mat4 V = glm::lookAt(probePosWS, probePosWS + v.dir, v.up);
 
             // drawing the scene EXCEPT the mirror
-            renderSceneNoMirror(P, V);
+            //renderSceneNoMirror(P, V);
         }
 
         // building mip chain for roughness LOD
@@ -809,7 +837,7 @@ private:
     clock_t start = clock();
     double duration = CLOCKS_PER_SEC * 0.2;
 
-    glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
+    glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(0.2, 0, 0, 0));
     
 };
 void Application::spawnTileAt(glm::ivec2 tc)

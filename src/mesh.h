@@ -79,7 +79,6 @@ private:
     void moveInto(GPUMesh&&);
     void freeGpuMemory();
 
-private:
     static constexpr GLuint INVALID = 0xFFFFFFFF;
     
     // applies a transformation to cpu mesh
