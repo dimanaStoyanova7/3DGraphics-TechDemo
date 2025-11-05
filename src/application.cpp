@@ -101,6 +101,7 @@ public:
         try {
             ShaderBuilder defaultBuilder;
             defaultBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shader_vert.glsl");
+            defaultBuilder.addStage(GL_GEOMETRY_SHADER, RESOURCE_ROOT "shaders/shader_geom.glsl");
             defaultBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shader_frag.glsl");
             m_defaultShader = defaultBuilder.build();
 
@@ -308,9 +309,7 @@ public:
             {
                 m_defaultShader.bind();
 
-                // Per-pass uniforms
-                glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
-                glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+                setCommonUniforms(m_defaultShader, P);
 
                 for (GPUMesh& mesh : m_meshes) {
                     // Choose per-mesh model matrix
@@ -321,25 +320,30 @@ public:
                     // Set per-mesh matrices
                     glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
                     glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
-                    glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+                    glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));                    
 
                     // Texture/material toggle (unchanged)
                     bool boundTexture = false;
-                    if (!mesh.texturePath.empty()) {
-                        auto it = textureCache.find(mesh.texturePath);
-                        if (it != textureCache.end()) {
-                            it->second.bind(GL_TEXTURE0);
-                            glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
-                            glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-                            glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
-                            boundTexture = true;
-                        }
-                    }
+                   
+                    // Diffuse map
+                    bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
+
+                    // Ambient map
+                    bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
+
+                    // Metalness map
+                    bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
+
+                    // Roughness map
+                    bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
+
+                    // Normal map
+                    bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
+
                     if (!boundTexture) {
                         glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
                         glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
                     }
-
                     mesh.draw(m_defaultShader);
                 }
             }
@@ -451,10 +455,6 @@ public:
             m_meshes.emplace_back(std::move(gpumesh));
         }
 
-
-
-
-
         // mirror obj
         glm::vec3 carPos   = positionInTileWS({0,0}, 0.5f, 1.0f);
         glm::vec3 sceneCtr = positionInTileWS({0,0}, 0.5f, 0.5f);
@@ -471,27 +471,100 @@ public:
 
         // --- Create Textures ---
         for (GPUMesh& mesh : m_meshes) {
+
+            // Diffuse / color map
             if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
                 const std::string path = mesh.texturePath;
-
-                // 1. Check if texture is already in cache
                 if (textureCache.find(path) == textureCache.end()) {
-                    // 2. Not found: Load it and insert into cache
-                    std::cout << "Loading unique texture: " << path << mesh.m_numIndices << std::endl;
+                    std::cout << "Loading unique diffuse texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
                     textureCache.emplace(path, Texture(path));
                 }
-
             }
+
+            // Ambient map
+            if (!mesh.ambientTexture.empty()) {
+                const std::string path = mesh.ambientTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique ambient texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Metalness map
+            if (!mesh.metalnessTexture.empty()) {
+                const std::string path = mesh.metalnessTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique metalness texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Roughness map
+            if (!mesh.roughnessTexture.empty()) {
+                const std::string path = mesh.roughnessTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique roughness texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Normal map
+            if (!mesh.normalMap.empty()) {
+                const std::string path = mesh.normalMap;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique normal map: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+        }
+    }
+
+    void setCommonUniforms(Shader& shader, const glm::mat4& P) {
+        // Per-pass uniforms - g because used in geometry shader and then passed
+        glUniform3fv(shader.getUniformLocation("glightPos"), 1, glm::value_ptr(m_lampPos));
+        glUniform3fv(shader.getUniformLocation("gcolor"), 1, glm::value_ptr(m_lampColor));
+        //replace with proper camera logic
+
+        glm::vec3 camera_position = getCameraPosition();
+        glUniform3fv(shader.getUniformLocation("gcamPos"), 1, glm::value_ptr(camera_position));
+
+        // use prb and nm
+        glUniform1i(shader.getUniformLocation("pbr"), m_pbr);
+        glUniform1i(shader.getUniformLocation("nm"), m_normalMapping);
+
+        if (m_normalMapping)glUniformMatrix4fv(m_defaultShader.getUniformLocation("gprojection"), 1, GL_FALSE, glm::value_ptr(P));
+    }
+
+    glm::vec3 getCameraPosition() {
+        if (m_camMode == CamMode::BirdsEye){
+            return glm::vec3(m_birdsEyeCenter.x, m_birdsEyeHeight, m_birdsEyeCenter.z);
+        }
+        else if (m_camMode == CamMode::Follow) {
+            return m_freeCam.pos;
+        }
+        else {
+            return m_trackball.position();
         }
 
     }
 
     void imgui() {
         // Use ImGui for easy input/output of ints, floats, strings, etc...
+
+        
+
         ImGui::Begin("Views");
         ImGui::Checkbox("Use material if no texture", &m_useMaterial);
         ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
         ImGui::SliderFloat("BirdsEye height", &birdsEyeHeight, 1.0f, 20.0f); //don't update anything yet
+
+        ImGui::Checkbox("PBR", &m_pbr);
+        ImGui::Checkbox("Normla mapping", &m_normalMapping);
 
         ImGui::Separator();
         ImGui::TextUnformatted("Lamp / Path");
@@ -528,7 +601,7 @@ public:
         glUniformMatrix4fv(m_envShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
         glUniformMatrix4fv(m_envShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(MM));
         glUniformMatrix3fv(m_envShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
-        glUniformMatrix4fv(m_envShader.getUniformLocation("viewMatrix"), 1, GL_FALSE, glm::value_ptr(V));
+        //glUniformMatrix4fv(m_envShader.getUniformLocation("viewMatrix"), 1, GL_FALSE, glm::value_ptr(V));
         glUniform3fv(m_envShader.getUniformLocation("cameraPos"), 1, glm::value_ptr(camPos));
 
         glUniform1f(m_envShader.getUniformLocation("fresnelStrength"), 0.65f);
@@ -552,6 +625,8 @@ public:
         glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
         glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
 
+        setCommonUniforms(m_defaultShader, P);
+
         for (GPUMesh& mesh : m_meshes) {
             const glm::mat4 M   = mesh.getIsMovable() ? m_walleMatrix : m_modelMatrix;
             const glm::mat4 MVP = P * V * M;
@@ -562,16 +637,23 @@ public:
             glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"),1, GL_FALSE, glm::value_ptr(NMM));
 
             bool boundTexture = false;
-            if (!mesh.texturePath.empty()) {
-                auto it = textureCache.find(mesh.texturePath);
-                if (it != textureCache.end()) {
-                    it->second.bind(GL_TEXTURE0);
-                    glUniform1i(m_defaultShader.getUniformLocation("colorMap"), 0);
-                    glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_TRUE);
-                    glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
-                    boundTexture = true;
-                }
-            }
+ 
+
+            // Diffuse map
+            bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords",  boundTexture);
+
+            // Ambient map
+            bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
+
+            // Metalness map
+            bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
+
+            // Roughness map
+            bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
+
+            // Normal map
+            bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
+
             if (!boundTexture) {
                 glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
                 glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
@@ -654,15 +736,39 @@ public:
             m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-
         glm::vec3 delta = nextPos - currPos;
         m_walleMatrix = glm::translate(m_walleMatrix, delta);
         glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
         depenetrateXZ(posWS);
         m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
+        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
+        if (clock() - start > duration) {
+            start = clock();
+            side *= -1;
+        }
+
     }
 
+    void bindTextureIfAvailable(
+        const std::string& texturePath,
+        Shader& shader,
+        const std::string& uniformName,
+        GLenum textureUnit,
+        const std::string& hasTextureName,
+        bool& boundFlag)
+    {
+        if (texturePath.empty())
+            return;
 
+        auto it = textureCache.find(texturePath);
+        if (it != textureCache.end()) {
+            it->second.bind(textureUnit);
+            glUniform1i(shader.getUniformLocation(uniformName), textureUnit - GL_TEXTURE0);
+            glUniform1i(m_defaultShader.getUniformLocation(hasTextureName), GL_TRUE);
+            glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), GL_FALSE);
+            boundFlag = true;
+        }
+    }
 
 private:
     Window m_window;
@@ -687,6 +793,8 @@ private:
     glm::mat4 m_modelMatrix { 1.0f };
     glm::mat4 m_walleMatrix{ 1.0f };
 
+    bool m_pbr = false;
+    bool m_normalMapping = false;
     bool m_moveFwd = false;
     bool m_moveBack = false;
     bool m_rotateLeft = false;
