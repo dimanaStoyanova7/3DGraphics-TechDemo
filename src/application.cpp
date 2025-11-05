@@ -137,6 +137,40 @@ public:
             };
             m_envMap.load(faces); 
             m_dynamicEnv.init(512);
+
+            glm::vec3 night = {0.10f, 0.18f, 0.40f};
+            glm::vec3 dawn  = {1.00f, 0.55f, 0.25f};
+            glm::vec3 noon  = {1.00f, 1.00f, 0.95f};
+            glm::vec3 dusk  = {1.00f, 0.45f, 0.25f};
+
+            auto seg = [&](glm::vec3 a, glm::vec3 b, glm::vec3 dirA, glm::vec3 dirB) {
+                Bezier3D c;
+                c.p0 = a;
+                c.p1 = a + dirA;
+                c.p2 = b - dirB;
+                c.p3 = b;
+                return c;
+            };
+            // gentle tangents
+            m_dayColor = {
+                seg(night, dawn, {0.00f,0.00f,0.00f}, {0.15f,0.10f,0.05f}),
+                seg(dawn,  noon, {0.15f,0.10f,0.05f}, {0.10f,0.10f,0.10f}),
+                seg(noon,  dusk, {0.10f,0.10f,0.10f}, {0.15f,0.08f,0.05f}),
+                seg(dusk,  night,{0.15f,0.08f,0.05f}, {0.00f,0.00f,0.00f})
+            };
+
+            auto seg1 = [&](float a, float b, float da, float db) {
+                Bezier1D c;
+                c.p0 = a; c.p1 = a + da; c.p2 = b - db; c.p3 = b;
+                return c;
+            };
+            // Intensities: night 0.10, dawn 0.60, noon 1.00, dusk 0.60, back to night
+            m_dayIntensity = {
+                seg1(0.10f, 0.60f, 0.00f, 0.10f),
+                seg1(0.60f, 1.00f, 0.10f, 0.10f),
+                seg1(1.00f, 0.60f, 0.10f, 0.10f),
+                seg1(0.60f, 0.10f, 0.10f, 0.00f)
+    };
         } catch (ShaderLoadingException e) {
             std::cerr << e.what() << std::endl;
         }
@@ -177,6 +211,33 @@ public:
     glm::vec3 m_lampPos  = {0.0f, 1.5f, 0.0f};
     glm::vec3 m_lampColor= {1.0f, 1.0f, 1.0f}; // bright, warm
     double m_prevTime    = 0.0;
+
+    // ---- Day/Night (Bezier) ----
+    struct Bezier1D {
+            float p0, p1, p2, p3;
+            float eval(float t) const {
+                float u = 1.0f - t;
+                return u*u*u*p0 + 3.0f*u*u*t*p1 + 3.0f*u*t*t*p2 + t*t*t*p3;
+            }
+        };
+    struct Bezier3D {
+            glm::vec3 p0, p1, p2, p3;
+            glm::vec3 eval(float t) const {
+                float u = 1.0f - t;
+                float b0 = u*u*u, b1 = 3.0f*u*u*t, b2 = 3.0f*u*t*t, b3 = t*t*t;
+                return b0*p0 + b1*p1 + b2*p2 + b3*p3;
+            }
+    };
+
+    float m_lightRadius = 6.0f;     
+    float m_lightIntensity = 50.0f;
+    float m_dayU        = 0.0f;     
+    float m_daySpeed    = 1.0f/60.0f; 
+    bool  m_pauseDay    = false;
+
+    std::vector<Bezier3D> m_dayColor;
+    std::vector<Bezier1D> m_dayIntensity;
+
 
     // env mapping feature
     std::vector<GPUMesh> m_mirrorMeshes;  // the dome mirror
@@ -260,6 +321,23 @@ public:
             double now = glfwGetTime();
             float dt = float(now - m_prevTime);
             m_prevTime = now;
+            // ---- Day/Night advance ----
+            if (!m_pauseDay) {
+                m_dayU += m_daySpeed * dt; 
+            }
+            int segCount = (int)m_dayColor.size();
+            float wrap = float(segCount);
+            while (m_dayU >= wrap) m_dayU -= wrap;
+            while (m_dayU < 0.0f)  m_dayU += wrap;
+
+            int   s = (int)std::floor(m_dayU) % segCount;
+            float t = m_dayU - std::floor(m_dayU);
+
+            glm::vec3 dayCol = m_dayColor[s].eval(t);
+            float     dayI   = m_dayIntensity[s].eval(t);
+
+            m_lampColor = dayCol * dayI;   
+
 
             if (!m_pauseLamp) {
                 m_pathU += m_lampSpeed * dt; // segments per second
@@ -537,6 +615,10 @@ public:
         glUniform1i(shader.getUniformLocation("pbr"), m_pbr);
         glUniform1i(shader.getUniformLocation("nm"), m_normalMapping);
 
+        glUniform1f(shader.getUniformLocation("glightRadius"), m_lightRadius);
+        glUniform1f(shader.getUniformLocation("glightIntensity"), m_lightIntensity); 
+
+
         if (m_normalMapping)glUniformMatrix4fv(m_defaultShader.getUniformLocation("gprojection"), 1, GL_FALSE, glm::value_ptr(P));
     }
 
@@ -584,6 +666,13 @@ public:
         ImGui::Separator();
         ImGui::TextUnformatted("Camera");
         camModeCombo("Active view", m_camMode);
+        ImGui::Separator();
+        ImGui::TextUnformatted("Day/Night + Light");
+        ImGui::SliderFloat("Light radius",     &m_lightRadius,     1.0f, 20.0f);
+        ImGui::SliderFloat("Light intensity",  &m_lightIntensity,  0.0f, 200.0f);
+        ImGui::Checkbox   ("Pause day/night",  &m_pauseDay);
+        ImGui::SliderFloat("Day speed (segs/s)", &m_daySpeed, 0.0f, 2.0f);
+
 
 
         ImGui::End();
@@ -622,9 +711,6 @@ public:
     void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
     {
         m_defaultShader.bind();
-        glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
-        glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
-
         setCommonUniforms(m_defaultShader, P);
 
         for (GPUMesh& mesh : m_meshes) {
