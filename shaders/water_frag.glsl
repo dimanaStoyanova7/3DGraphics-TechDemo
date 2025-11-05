@@ -9,9 +9,9 @@ layout(std140) uniform Material // Must match the GPUMaterial defined in src/mes
 };
 
 uniform sampler2D colorMap;
-uniform sampler2D ambientMap;
-uniform sampler2D metalnessMap;
-uniform sampler2D roughnessMap;
+//uniform sampler2D ambientMap;
+//uniform sampler2D metalnessMap;
+//uniform sampler2D roughnessMap;
 uniform sampler2D normalMap;
 
 uniform bool hasTexCoords;
@@ -32,7 +32,6 @@ in vec3 lightPos;
 in vec3 camPos;
 in vec3 lightColor;
 in vec3 fragCrntPos;
-in mat3 TBN;
 
 const float PI = 3.14159265359;
 
@@ -93,19 +92,18 @@ void main()
     if(nm && hasNormalMap){   
         N = texture(normalMap, fragTexCoord).rgb;
         N = N * 2.0 - 1.0;
-        N = normalize(TBN * N); 
-     }
+    }
 
     float metallic  = 0.0;   // non-metal surface (plastic, wood, fabric)
-    float roughness = 0.5;   // moderately rough (not glossy, not matte)
+    float roughness = 0.0;   // moderately rough (not glossy, not matte)
     float ao        = 1.0;   // full ambient light (no occlusion)
-    if(hasMetalnessTexture) metallic  = texture(metalnessMap, fragTexCoord).r;
-    if(hasRoughnessTexture) roughness = texture(roughnessMap, fragTexCoord).r;
-    if(hasAmbientTexture) float ao        = texture(ambientMap, fragTexCoord).r;
+    //if(hasMetalnessTexture) metallic  = texture(metalnessMap, fragTexCoord).r;
+    //if(hasRoughnessTexture) roughness = texture(roughnessMap, fragTexCoord).r;
+    //if(hasAmbientTexture) float ao        = texture(ambientMap, fragTexCoord).r;
 
     // --- Base color selection (matches your partner's behavior) ---
     vec3 baseColor = vec3(1,0,0); // default red, if nothing else applies
-    if (hasTexCoords) {
+    if (true) {
         baseColor = texture(colorMap, fragTexCoord).rgb;
     } else if (useMaterial) {
         baseColor = kd;
@@ -123,7 +121,7 @@ void main()
 
         float distance    = length(L);
         float attenuation = 1.0 / (distance * distance);
-        vec3 radiance     = lightColor * attenuation;   
+        vec3 radiance     = lightColor;   
     
         // cook-torrance brdf
         float NDF = DistributionGGX(N, H, roughness);        

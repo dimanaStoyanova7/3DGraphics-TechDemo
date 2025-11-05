@@ -8,9 +8,7 @@ in vec3 gPosition[];
 in vec3 gNormal[];
 in vec2 gTexCoord[];
 
-// ===== Uniforms (single value per draw call =====
-uniform mat4 gprojection; 
-uniform mat4 modelMatrix;      
+// ===== Uniforms (single value per draw call =====    
 uniform vec3 glightPos;   
 uniform vec3 gcamPos;     
 uniform vec3 gcolor;      
@@ -23,12 +21,11 @@ out vec2 fragTexCoord;
 out vec3 lightPos;      
 out vec3 camPos;
 out vec3 lightColor;      
-out mat3 TBN;
 
 void main()
 {
     if(nm){
-        // Edges of the triangle (Calculations look correct for TBN)
+        
         vec3 edge0 = gPosition[1] - gPosition[0];
         vec3 edge1 = gPosition[2] - gPosition[0];
         vec2 deltaUV0 = gTexCoord[1] - gTexCoord[0];
@@ -39,28 +36,24 @@ void main()
         vec3 tangent = vec3(invDet * (deltaUV1.y * edge0 - deltaUV0.y * edge1));
         vec3 bitangent = vec3(invDet * (-deltaUV1.x * edge0 + deltaUV0.x * edge1));
 
-        vec3 T = normalize(vec3(modelMatrix * vec4(tangent, 0.0f)));
-        vec3 B = normalize(vec3(modelMatrix * vec4(bitangent, 0.0f)));
-        vec3 N = normalize(vec3(modelMatrix * vec4(cross(edge1, edge0), 0.0f)));
+        vec3 T = normalize(tangent);
+        vec3 B = normalize(bitangent);
+        vec3 N = normalize(cross(edge1, edge0));
 
-        //vec3 T = normalize(tangent);
-        //vec3 B = normalize(bitangent);
-        //vec3 N = normalize(cross(edge1, edge0));
+        mat3 TBN = mat3(T, B, N);
+        TBN = transpose(TBN); // TBN is an orthogonal matrix
 
-        TBN = mat3(T, B, N);
-        //TBN = transpose(TBN); // TBN is an orthogonal matrix
-
-       vec3 lightPos_T = glightPos;
-       vec3 camPos_T   = gcamPos;
+       vec3 lightPos_T = TBN * glightPos;
+       vec3 camPos_T   = TBN * gcamPos;
 
 
         // === VERTEX EMISSION LOOP ===
        for (int i = 0; i < 3; ++i){
-            // CRITICAL FIX: gl_Position is already in Clip Space
+
             gl_Position = gl_in[i].gl_Position; 
 
             // Transform World Space position to TANGENT SPACE
-            fragPosition = (modelMatrix * vec4(gPosition[i], 1)).xyz;
+            fragPosition = TBN * gPosition[i];
     
             // Pass other data per vertex
             fragNormal = gNormal[i];
@@ -82,7 +75,7 @@ void main()
         {
             
             gl_Position = gl_in[i].gl_Position; 
-            fragPosition = (modelMatrix * vec4(gPosition[i], 1)).xyz;// World Space Position
+            fragPosition = gPosition[i]; // World Space Position
             lightPos = glightPos;       // World Space Light Position
             camPos = gcamPos;           // World Space Camera Position
 
