@@ -14,6 +14,10 @@ void BezierPath::initGL(const char* lineVertPath, const char* lineFragPath) {
     if (m_segments.empty()) buildDefaultClosedLoop();
     rebuildLineVBO(64);
 }
+namespace {
+    constexpr float kCurveYScale = 2.0f;
+    constexpr float kCurveYBias  = 0.0f; 
+}
 
 void BezierPath::ensureBuffers() {
     if (!m_vao) glGenVertexArrays(1, &m_vao);
@@ -66,7 +70,9 @@ void BezierPath::rebuildLineVBO(int samplesPerSegment) {
     for (size_t s = 0; s < m_segments.size(); ++s) {
         for (int i = 0; i <= samplesPerSegment; ++i) {
             float t = float(i) / float(samplesPerSegment);
-            m_lineVerts.push_back(m_segments[s].eval(t));
+            glm::vec3 p = m_segments[s].eval(t);
+            p.y = p.y * kCurveYScale + kCurveYBias;   // <— added
+            m_lineVerts.push_back(p);
         }
     }
     m_lineVertCount = (int)m_lineVerts.size();
@@ -82,16 +88,16 @@ void BezierPath::rebuildLineVBO(int samplesPerSegment) {
 glm::vec3 BezierPath::evalGlobal(float u) const {
     if (m_segments.empty()) return glm::vec3(0.0f);
     int segCount = (int)m_segments.size();
-    // wrap u
     float wrap = (float)segCount;
     float uf = u;
-    // manual wrap to handle negatives too
     while (uf >= wrap) uf -= wrap;
     while (uf < 0.0f)  uf += wrap;
 
     int   seg = (int)std::floor(uf) % segCount;
     float t   = uf - std::floor(uf);
-    return m_segments[seg].eval(t);
+    glm::vec3 p = m_segments[seg].eval(t);
+    p.y = p.y * kCurveYScale + kCurveYBias;   // <— added
+    return p;
 }
 
 void BezierPath::drawCurve(const Viewport& vp, const glm::mat4& P, const glm::mat4& V, const glm::vec3& color) {
