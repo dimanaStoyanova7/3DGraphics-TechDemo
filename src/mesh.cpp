@@ -1,28 +1,20 @@
 #include "mesh.h"
-#include "texture.h"
 #include <framework/disable_all_warnings.h>
 DISABLE_WARNINGS_PUSH()
 #include <fmt/format.h>
 DISABLE_WARNINGS_POP()
 #include <iostream>
 #include <vector>
-#include <iostream>
-
-
-long GPUMesh::next_id = 0;
 
 GPUMaterial::GPUMaterial(const Material& material) :
     kd(material.kd),
     ks(material.ks),
     shininess(material.shininess),
     transparency(material.transparency)
-	//kdTexture(material.kdTexture)
 {}
 
-GPUMesh::GPUMesh(const Mesh& cpuMesh, bool isMovable)
+GPUMesh::GPUMesh(const Mesh& cpuMesh)
 {
-    m_id = next_id++;
-    m_isMovable = isMovable;
     // Create uniform buffer to store mesh material (https://learnopengl.com/Advanced-OpenGL/Advanced-GLSL)
     GPUMaterial gpuMaterial(cpuMesh.material);
     glGenBuffers(1, &m_uboMaterial);
@@ -30,37 +22,7 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh, bool isMovable)
     glBufferData(GL_UNIFORM_BUFFER, sizeof(GPUMaterial), &gpuMaterial, GL_STATIC_READ);
 
     // Figure out if this mesh has texture coordinates
-    //m_hasTextureCoords = static_cast<bool>(cpuMesh.material.kdTexture);
-    m_hasTextureCoords = !cpuMesh.material.kdTexture.empty();
-    if (m_hasTextureCoords) {
-         std::cout << "Loading diffuse texture for mesh: " << cpuMesh.material.kdTexture.generic_string() << std::endl;
-        texturePath = cpuMesh.material.kdTexture.generic_string();
-    }
-
-    m_hasAmbientTexture = !cpuMesh.material.ambientTexture.empty();
-    if (m_hasAmbientTexture) {
-         std::cout << "Loading ambient texture for mesh: " << cpuMesh.material.ambientTexture.generic_string() << std::endl;
-        ambientTexture = cpuMesh.material.ambientTexture.generic_string();
-    }
-
-    m_hasMetalnessTexture = !cpuMesh.material.metalnessTexture.empty();
-    if (m_hasMetalnessTexture) {
-         std::cout << "Loading metalness texture for mesh: " << cpuMesh.material.metalnessTexture.generic_string() << std::endl;
-        metalnessTexture = cpuMesh.material.metalnessTexture.generic_string();
-    }
-
-    m_hasRoughnessTexture = !cpuMesh.material.roughnessTexture.empty();
-    if (m_hasRoughnessTexture) {
-         std::cout << "Loading roughness texture for mesh: " << cpuMesh.material.roughnessTexture.generic_string() << std::endl;
-        roughnessTexture = cpuMesh.material.roughnessTexture.generic_string();
-    }
-
-    m_hasNormalMap = !cpuMesh.material.normalMap.empty();
-    if (m_hasNormalMap) {
-         std::cout << "Loading normal map for mesh: " << cpuMesh.material.normalMap.generic_string() << std::endl;
-        normalMap = cpuMesh.material.normalMap.generic_string();
-    }
-
+    m_hasTextureCoords = static_cast<bool>(cpuMesh.material.kdTexture);
 
     // Create VAO and bind it so subsequent creations of VBO and IBO are bound to this VAO
     glGenVertexArrays(1, &m_vao);
@@ -93,22 +55,6 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh, bool isMovable)
     m_numIndices = static_cast<GLsizei>(3 * cpuMesh.triangles.size());
 }
 
-
-GPUMesh::GPUMesh(const Mesh& cpuMesh, const glm::mat4& transform, bool isMovable)
-    : GPUMesh(applyTransform(cpuMesh, transform), isMovable) // delegates properly
-{
-}
-
-Mesh GPUMesh::applyTransform(const Mesh& mesh, const glm::mat4& transform) {
-    Mesh result = mesh; // make a copy
-    for (Vertex& v : result.vertices) {
-        v.position = glm::vec3(transform * glm::vec4(v.position, 1.0f));
-        v.normal = glm::mat3(glm::transpose(glm::inverse(transform))) * v.normal;
-    }
-    return result;
-}
-
-
 GPUMesh::GPUMesh(GPUMesh&& other)
 {
     moveInto(std::move(other));
@@ -125,32 +71,17 @@ GPUMesh& GPUMesh::operator=(GPUMesh&& other)
     return *this;
 }
 
-std::vector<GPUMesh> GPUMesh::loadMeshGPU(std::filesystem::path filePath, bool normalize, bool isMovable) {
+std::vector<GPUMesh> GPUMesh::loadMeshGPU(std::filesystem::path filePath, bool normalize) {
     if (!std::filesystem::exists(filePath))
         throw MeshLoadingException(fmt::format("File {} does not exist", filePath.string().c_str()));
 
     // Generate GPU-side meshes for all sub-meshes
     std::vector<Mesh> subMeshes = loadMesh(filePath, { .normalizeVertexPositions = normalize });
-
     std::vector<GPUMesh> gpuMeshes;
-    for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh, isMovable); }
+    for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh); }
     
     return gpuMeshes;
 }
-
-std::vector<GPUMesh> GPUMesh::loadMeshGPU( glm::mat4& transform, std::filesystem::path filePath, bool normalize, bool isMovable) {
-    if (!std::filesystem::exists(filePath))
-        throw MeshLoadingException(fmt::format("File {} does not exist", filePath.string().c_str()));
-
-    // Generate GPU-side meshes for all sub-meshes
-    std::vector<Mesh> subMeshes = loadMesh(filePath, { .normalizeVertexPositions = normalize });
-
-    std::vector<GPUMesh> gpuMeshes;
-    for (const Mesh& mesh : subMeshes) { gpuMeshes.emplace_back(mesh, transform, isMovable); }
-
-    return gpuMeshes;
-}
-
 
 bool GPUMesh::hasTextureCoords() const
 {
@@ -177,10 +108,6 @@ void GPUMesh::moveInto(GPUMesh&& other)
     m_vbo = other.m_vbo;
     m_vao = other.m_vao;
     m_uboMaterial = other.m_uboMaterial;
-    texturePath = other.texturePath;
-    m_id = other.m_id;
-    m_isMovable = other.m_isMovable;
-
 
     other.m_numIndices = 0;
     other.m_hasTextureCoords = other.m_hasTextureCoords;
