@@ -202,7 +202,7 @@ public:
     // Bird’s-eye parameters
     float m_birdsEyeWorldHalfSize = 2.0f;  
     glm::vec3 m_birdsEyeCenter { 0.0f, 0.0f, 0.0f };
-    float m_birdsEyeHeight = 5.0f;
+    float m_birdsEyeHeight = 15.0f;
 
     // ---- Lamp & path ----
     BezierPath m_bezierPath;
@@ -286,9 +286,6 @@ public:
 
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
-    
-    float birdsEyeHalfSize = 2.0f;         // world half-extent visible in ortho
-    float birdsEyeHeight   = 5.0f;         // camera height
 
     void update()
     {
@@ -749,8 +746,7 @@ public:
 
         ImGui::Begin("Views");
         ImGui::Checkbox("Use material if no texture", &m_useMaterial);
-        ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
-        ImGui::SliderFloat("BirdsEye height", &birdsEyeHeight, 1.0f, 20.0f); //don't update anything yet
+        ImGui::SliderFloat("BirdsEye height", &m_birdsEyeWorldHalfSize, 0.5f, 10.0f);
 
         ImGui::Checkbox("PBR", &m_pbr);
         ImGui::Checkbox("Normla mapping", &m_normalMapping);
