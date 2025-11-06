@@ -287,6 +287,9 @@ public:
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
 
+    const glm::vec3 kWalleForwardOS = glm::vec3(1.0f, 0.0f, 0.0f);
+
+
     void update()
     {
         glEnable(GL_DEPTH_TEST);
@@ -913,29 +916,28 @@ public:
 
     void updateWallePosition()
     {
-        glm::vec3 fwdWS = glm::normalize(glm::vec3(m_walleMatrix * glm::vec4(0,0,-1,0)));
-        fwdWS.y = 0.0f;
-        if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
+    glm::vec3 fwdWS = glm::normalize(glm::mat3(m_walleMatrix) * kWalleForwardOS);
+    fwdWS.y = 0.0f;
+    if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
 
-        glm::vec3 moveDir(0.0f);
-        if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
-        if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
-        glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
-        glm::vec3 nextPos = currPos + moveDir;
-        if (m_rotateLeft)
-            m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-        if (m_rotateRight)
-            m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-        glm::vec3 delta = nextPos - currPos;
-        m_walleMatrix = glm::translate(m_walleMatrix, delta);
-        glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
-        depenetrateXZ(posWS);
-        m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
-        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
-        if (clock() - start > duration) {
-            start = clock();
-            side *= -1;
-        }
+    glm::vec3 moveDir(0.0f);
+    if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
+    if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
+    glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
+    glm::vec3 nextPos = currPos + moveDir;
+    if (m_rotateLeft)
+        m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
+    if (m_rotateRight)
+        m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
+    glm::vec3 delta = nextPos - currPos;
+    m_walleMatrix = glm::translate(m_walleMatrix, delta);
+    glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
+    depenetrateXZ(posWS);
+    m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
+    if (clock() - start > duration) {
+        start = clock();
+        side *= -1;
+    }
 
     }
 
@@ -995,8 +997,6 @@ private:
     int side = -1;
     clock_t start{};   
     double duration = CLOCKS_PER_SEC * 0.2;
-
-    glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
 
     struct Obstacle {
         glm::ivec2 tile;   // which tile it belongs to
