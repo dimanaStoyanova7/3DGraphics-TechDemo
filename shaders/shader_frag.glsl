@@ -92,14 +92,8 @@ void main()
     float q  = dist / r;
     float attenuation = 1.0 / (1.0 + q*q); // smooth 1/r^2-ish but stable
 
-{
+
     // --- PBR ---
-    vec3 V = normalize(camPos - fragPosition);
-    vec3 L = normalize(lightPos - fragPosition);
-    vec3 H = normalize(L + V);
-    
-    vec3 N = normalize(fragNormal);
-    
     if(nm && hasNormalMap){   
         N = texture(normalMap, fragTexCoord).rgb;
         N = N * 2.0 - 1.0;
