@@ -6,6 +6,10 @@ layout(std140) uniform Material // Must match the GPUMaterial defined in src/mes
 	vec3 ks;
 	float shininess;
 	float transparency;
+    float metallic;
+    float roughness;
+    float ao;
+
 };
 
 uniform sampler2D colorMap;
@@ -94,20 +98,23 @@ void main()
         N = N * 2.0 - 1.0;
      }
 
-    float metallic  = 0.0;   // non-metal surface (plastic, wood, fabric)
-    float roughness = 0.5;   // moderately rough (not glossy, not matte)
-    float ao        = 1.0;   // full ambient light (no occlusion)
-    if(hasMetalnessTexture) metallic  = texture(metalnessMap, fragTexCoord).r;
-    if(hasRoughnessTexture) roughness = texture(roughnessMap, fragTexCoord).r;
-    if(hasAmbientTexture) float ao        = texture(ambientMap, fragTexCoord).r;
+    float metallic  = metallic;   // non-metal surface (plastic, wood, fabric)
+    float roughness = roughness;   // moderately rough (not glossy, not matte)
+    float ao        = ao;   // full ambient light (no occlusion)
+
+    if(hasMetalnessTexture && !useMaterial) metallic  = texture(metalnessMap, fragTexCoord).r;
+    if(hasRoughnessTexture && !useMaterial) roughness = texture(roughnessMap, fragTexCoord).r;
+    if(hasAmbientTexture && !useMaterial) float ao        = texture(ambientMap, fragTexCoord).r;
 
     // --- Base color selection (matches your partner's behavior) ---
     vec3 baseColor = vec3(1,0,0); // default red, if nothing else applies
-    if (hasTexCoords) {
-        baseColor = texture(colorMap, fragTexCoord).rgb;
-    } else if (useMaterial) {
+    if (useMaterial) {
         baseColor = kd;
-    } else {
+    }
+    else if (hasTexCoords) {
+        baseColor = texture(colorMap, fragTexCoord).rgb;
+    } 
+    else {
         // normal visualization (debug)
         baseColor = normalize(fragNormal) * 0.5 + 0.5;
     }

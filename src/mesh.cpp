@@ -15,7 +15,10 @@ GPUMaterial::GPUMaterial(const Material& material) :
     kd(material.kd),
     ks(material.ks),
     shininess(material.shininess),
-    transparency(material.transparency)
+    transparency(material.transparency),
+    roughness(material.roughness),
+    metallic(material.metallic),
+    ao(material.ao)
 	//kdTexture(material.kdTexture)
 {}
 

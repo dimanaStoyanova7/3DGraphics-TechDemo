@@ -93,7 +93,7 @@ struct RobotArm {
     glm::mat4 thirdTransformation;
     glm::mat4 handRotation;
 
-    glm::vec3 offsetFirst = glm::vec3(0.0, 0.7, 0.0);
+    glm::vec3 offsetFirst = glm::vec3(0.0, 0.725, 0.0);
     glm::vec3 offsetSecond = glm::vec3(0.0, 2.0, 1.2);
     glm::vec3 offsetThird = glm::vec3(0.0, 3.2, 0.2);
     glm::vec3 offsetFourth = glm::vec3(0.0, 2.9, -1.2);
@@ -358,28 +358,8 @@ public:
                     glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
                     glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));                    
 
-                    // Texture/material toggle (unchanged)
-                    bool boundTexture = false;
-                   
-                    // Diffuse map
-                    bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
-
-                    // Ambient map
-                    bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
-
-                    // Metalness map
-                    bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
-
-                    // Roughness map
-                    bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
-
-                    // Normal map
-                    bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
-
-                    if (!boundTexture) {
-                        glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                        glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
-                    }
+                    setMaterialsandTextures(mesh, m_defaultShader);
+                    
                     mesh.draw(m_defaultShader);
                     for (int i = 0; i < 8; ++i) {
                         glActiveTexture(GL_TEXTURE0 + i);
@@ -580,11 +560,14 @@ public:
         ImGui::Begin("Views");
 
         ImGui::Text("Control Wall-e with arrows");
+        ImGui::SliderFloat("Wall-e forward speed", &m_moveSpeed, 0.0, 0.2);
+        ImGui::SliderFloat("Wall-e rotation speed", &m_rotationSpeed, 0.0, 1.0);
+
         ImGui::Text("Control robot arm with 1 2 3 4 and shift + 1 2 3 4");
 
         ImGui::Separator();
 
-        ImGui::Checkbox("Use material if no texture", &m_useMaterial);
+        ImGui::Checkbox("Use material", &m_useMaterial);
         ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
         ImGui::SliderFloat("BirdsEye height", &birdsEyeHeight, 1.0f, 20.0f); //don't update anything yet
 
@@ -651,28 +634,7 @@ public:
             glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
             glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
 
-            // Texture/material toggle (unchanged)
-            bool boundTexture = false;
-
-            // Diffuse map
-            bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
-
-            // Ambient map
-            bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
-
-            // Metalness map
-            bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
-
-            // Roughness map
-            bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
-
-            // Normal map
-            bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
-
-            if (!boundTexture) {
-                glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
-            }
+            setMaterialsandTextures(mesh, m_defaultShader);
             mesh.draw(m_defaultShader);
             for (int i = 0; i < 8; ++i) {
                 glActiveTexture(GL_TEXTURE0 + i);
@@ -729,28 +691,7 @@ public:
             glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"),      1, GL_FALSE, glm::value_ptr(M));
             glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"),1, GL_FALSE, glm::value_ptr(NMM));
 
-            bool boundTexture = false;
- 
-
-            // Diffuse map
-            bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords",  boundTexture);
-
-            // Ambient map
-            bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
-
-            // Metalness map
-            bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
-
-            // Roughness map
-            bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
-
-            // Normal map
-            bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
-
-            if (!boundTexture) {
-                glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
-            }
+            setMaterialsandTextures(mesh, m_defaultShader);
             mesh.draw(m_defaultShader);
         }
     }
@@ -1010,6 +951,37 @@ public:
         return M;
     }
 
+    void setMaterialsandTextures(GPUMesh& mesh, Shader& shader) {
+        if (m_useMaterial) {
+            glUniform1i(shader.getUniformLocation("useMaterial"), GL_TRUE);
+        }
+        else {
+            // Texture/material toggle (unchanged)
+            bool boundTexture = false;
+
+            // Diffuse map
+            bindTextureIfAvailable(mesh.texturePath, shader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
+
+            // Ambient map
+            bindTextureIfAvailable(mesh.ambientTexture, shader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
+
+            // Metalness map
+            bindTextureIfAvailable(mesh.metalnessTexture, shader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
+
+            // Roughness map
+            bindTextureIfAvailable(mesh.roughnessTexture, shader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
+
+            // Normal map
+            bindTextureIfAvailable(mesh.normalMap, shader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
+
+            if (!boundTexture) {
+                glUniform1i(shader.getUniformLocation("hasTexCoords"), GL_FALSE);
+
+            }
+        }
+
+    }
+
 
 
 private:
@@ -1025,7 +997,7 @@ private:
     std::vector<GPUMesh> m_meshes;
     std::map<std::string, Texture> textureCache;
 	Texture m_texture;
-    bool m_useMaterial { true };
+    bool m_useMaterial { false };
 	//bool m_useTrackBall{ false };
 
     //Trackball m_trackball{ &m_window, glm::radians(80.0f) };
@@ -1044,7 +1016,7 @@ private:
     bool m_moveBack = false;
     bool m_rotateLeft = false;
     bool m_rotateRight = false;
-    float m_moveSpeed = 0.01f;
+    float m_moveSpeed = 0.1f;
     float m_rotationSpeed = 0.5f;
 
     float m_robotArmAngle1{ 0.0f };
