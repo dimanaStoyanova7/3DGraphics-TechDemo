@@ -1,0 +1,48 @@
+# Blender 4.5.3 LTS MTL File: 'Robot arm.blend'
+# www.blender.org
+
+newmtl Material.003
+Tr 0.0000
+Tf 1 1 1
+illum 1
+Ka 1 1 1
+Kd 1 1 1
+Ke 0 0 0
+map_Kd textures/orange_metal_texture.png
+map_Pm textures/worn_metal4_Metallic.png
+map_Pr textures/worn_metal4_Roughness.png
+
+
+
+newmtl Material.002
+Tr 0.0000
+Tf 1 1 1
+illum 1
+Ka 1 1 1
+Kd 1 1 1
+Ke 0 0 0
+map_Pr textures/worn_metal4_Roughness.png
+map_Ka textures/internal_ground_ao_texture.jpeg
+
+newmtl Material.004
+Tr 0.0000
+Tf 1 1 1
+illum 1
+Ka 1 1 1
+Kd 1 1 1
+Ke 0 0 0
+map_Pm textures/worn_metal4_Metallic.png
+
+
+newmtl Material.001
+Tr 0.0000
+Tf 1 1 1
+illum 1
+Ka 1 1 1
+Kd 1 1 1
+Ke 0 0 0
+map_Kd textures/worn-shiny-metal-albedo.png
+map_Pm textures/worn-shiny-metal-Metallic.png
+map_Pr textures/worn-shiny-metal-Roughness.png
+norm   textures/worn-shiny-metal-Normal-ogl.png
+map_Ka textures/worn-shiny-metal-ao.png
