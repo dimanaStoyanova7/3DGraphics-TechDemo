@@ -120,6 +120,7 @@ public:
                                 RESOURCE_ROOT "shaders/line_frag.glsl");
             m_bezierPath.setVisible(m_showCurve);
             m_prevTime = glfwGetTime();
+            start = clock();
 
             // Any new shaders can be added below in similar fashion.
             // ==> Don't forget to reconfigure CMake when you do!
@@ -212,6 +213,14 @@ public:
     glm::vec3 m_lampColor= {1.0f, 1.0f, 1.0f}; // bright, warm
     double m_prevTime    = 0.0;
 
+    // ---- Light reach + intensity/exposure ----
+    float m_lightRadius = 100.0f;          // larger reach so “day” doesn’t wash out
+    float m_baseIntensity = 2.5f;       // baseline brightness
+    float m_noonBoost     = 1.0f;        // multiplier at noon
+    float m_nightBoost    = 1.0f;       // multiplier at night
+    float m_currentLightIntensity = 2.5f; // computed each frame from the curve
+    float m_exposure = 1.5f;             // tone-mapping exposure
+
     // ---- Day/Night (Bezier) ----
     struct Bezier1D {
             float p0, p1, p2, p3;
@@ -229,8 +238,6 @@ public:
             }
     };
 
-    float m_lightRadius = 6.0f;     
-    float m_lightIntensity = 50.0f;
     float m_dayU        = 0.0f;     
     float m_daySpeed    = 1.0f/60.0f; 
     bool  m_pauseDay    = false;
@@ -335,6 +342,8 @@ public:
 
             glm::vec3 dayCol = m_dayColor[s].eval(t);
             float     dayI   = m_dayIntensity[s].eval(t);
+            float intensityScale = glm::mix(m_nightBoost, m_noonBoost, std::pow(dayI, 0.6f));
+            m_currentLightIntensity = m_baseIntensity * intensityScale;
 
             m_lampColor = dayCol * dayI;   
 
@@ -616,7 +625,8 @@ public:
         glUniform1i(shader.getUniformLocation("nm"), m_normalMapping);
 
         glUniform1f(shader.getUniformLocation("glightRadius"), m_lightRadius);
-        glUniform1f(shader.getUniformLocation("glightIntensity"), m_lightIntensity); 
+        glUniform1f(shader.getUniformLocation("glightIntensity"), m_currentLightIntensity); 
+        glUniform1f(shader.getUniformLocation("uExposure"),       m_exposure);
 
 
         if (m_normalMapping)glUniformMatrix4fv(m_defaultShader.getUniformLocation("gprojection"), 1, GL_FALSE, glm::value_ptr(P));
@@ -669,7 +679,8 @@ public:
         ImGui::Separator();
         ImGui::TextUnformatted("Day/Night + Light");
         ImGui::SliderFloat("Light radius",     &m_lightRadius,     1.0f, 20.0f);
-        ImGui::SliderFloat("Light intensity",  &m_lightIntensity,  0.0f, 200.0f);
+        ImGui::SliderFloat("Base intensity", &m_baseIntensity, 0.0f, 200.0f);
+        ImGui::Text("Computed intensity: %.2f", m_currentLightIntensity);
         ImGui::Checkbox   ("Pause day/night",  &m_pauseDay);
         ImGui::SliderFloat("Day speed (segs/s)", &m_daySpeed, 0.0f, 2.0f);
 
@@ -889,7 +900,7 @@ private:
     float m_rotationSpeed = 0.5f;
 
     int side = -1;
-    clock_t start = clock();
+    clock_t start{};   
     double duration = CLOCKS_PER_SEC * 0.2;
 
     glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
@@ -1009,10 +1020,10 @@ void Application::maybeSpawnObstacle(glm::ivec2 tc)
     const float halfLen   = 3.00f; // half of barrier length along its long axis
     const float halfWidth = 0.95f; // ~half its width; this is the circle radius
 
-    glm::vec3 fwd = glm::normalize(glm::vec3(std::cos(yaw), 0.0f, std::sin(yaw)));
+    glm::vec3 dirF = glm::normalize(glm::vec3(std::cos(yaw), 0.0f, std::sin(yaw)));
 
-    glm::vec3 endA = posWS - fwd * halfLen;
-    glm::vec3 endB = posWS + fwd * halfLen;
+    glm::vec3 endA = posWS - dirF * halfLen;
+    glm::vec3 endB = posWS + dirF * halfLen;
 
     // register colliders (XZ only; y is ignored elsewhere)
     m_obstacles.push_back(Obstacle{ tc, endA, halfWidth });
