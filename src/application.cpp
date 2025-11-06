@@ -916,13 +916,17 @@ public:
 
     void updateWallePosition()
     {
-        glm::vec3 fwdWS = glm::normalize(glm::vec3(m_walleMatrix * glm::vec4(0,0,-1,0)));
-        fwdWS.y = 0.0f;
-        if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
+        //glm::vec3 fwdWS = glm::normalize(glm::vec3(m_walleMatrix * glm::vec4(0,0,-1,0)));
+        //fwdWS.y = 0.0f;
+        //if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
 
         glm::vec3 moveDir(0.0f);
-        if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
-        if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
+        //if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
+        //if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
+
+        if (m_moveFwd)  moveDir += fwd;
+        if (m_moveBack) moveDir -= fwd;
+
         glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
         glm::vec3 nextPos = currPos + moveDir;
         if (m_rotateLeft)
@@ -934,11 +938,12 @@ public:
         glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
         depenetrateXZ(posWS);
         m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
+
         //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
-        if (clock() - start > duration) {
-            start = clock();
-            side *= -1;
-        }
+        //if (clock() - start > duration) {
+          //  start = clock();
+            //side *= -1;
+        //}
 
     }
 
