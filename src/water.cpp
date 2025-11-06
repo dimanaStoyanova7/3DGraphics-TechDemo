@@ -32,8 +32,8 @@ Mesh Water::generateMesh() {
             v.position = glm::vec3(x0 + c * dx, y, z0 + r * dz);  // flat at height y
             v.normal = glm::vec3(0.0f, 1.0f, 0.0f);               // up normal
             v.texCoord = glm::vec2(
-                cols%2,
-                rows%2
+                (cols > 1) ? float(c) / float(cols - 1) : 0.0f,
+                (rows > 1) ? float(r) / float(rows - 1) : 0.0f
             );
             mesh.vertices.push_back(v);
         }
@@ -51,6 +51,15 @@ Mesh Water::generateMesh() {
             mesh.triangles.push_back(glm::uvec3(i1, i2, i3));  // second triangle
         }
     }
+
+
+    //setup material
+    mesh.material.kdTexture = texture;
+    mesh.material.normalMap = normalMap;
+    mesh.material.kd  = kd;
+    mesh.material.ks = ks;
+    mesh.material.shininess = shininess;
+    mesh.material.transparency = transparency;
 
     return mesh;
 }

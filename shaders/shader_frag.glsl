@@ -1,6 +1,5 @@
 #version 410
-
-layout(std140) uniform Material // Must match the GPUMaterial defined in src/mesh.h
+layout(std140) uniform Material
 {
     vec3 kd;
 	vec3 ks;
@@ -26,10 +25,9 @@ uniform bool hasNormalMap;
 
 uniform bool pbr;
 uniform bool nm;
-
 uniform bool useMaterial;
 
-uniform float glightRadius;
+uniform float glightRadius;  
 uniform float glightIntensity;
 
 in vec3 fragPosition;
@@ -38,11 +36,8 @@ in vec2 fragTexCoord;
 in vec3 lightPos;
 in vec3 camPos;
 in vec3 lightColor;
-in vec3 fragCrntPos;
-//in mat3 TBN;
 
 const float PI = 3.14159265359;
-
 
 layout(location = 0) out vec4 fragColor;
 
@@ -95,19 +90,10 @@ void main()
     float r  = max(glightRadius, 1e-3);
     float q  = dist / r;
     float attenuation = 1.0 / (1.0 + q*q); // smooth 1/r^2-ish but stable
-
-{
-    // --- PBR ---
-    vec3 V = normalize(camPos - fragPosition);
-    vec3 L = normalize(lightPos - fragPosition);
-    vec3 H = normalize(L + V);
-    
-    vec3 N = normalize(fragNormal);
-    
-    if(nm && hasNormalMap){
+   
+    if(nm && hasNormalMap){   
         N = texture(normalMap, fragTexCoord).rgb;
         N = N * 2.0 - 1.0;
-        //N = normalize(TBN * N);
      }
 
     float metallic  = metallic;   // non-metal surface (plastic, wood, fabric)
@@ -125,7 +111,7 @@ void main()
     }
     else if (hasTexCoords) {
         baseColor = texture(colorMap, fragTexCoord).rgb;
-    }
+    } 
     else {
         // normal visualization (debug)
         baseColor = normalize(fragNormal) * 0.5 + 0.5;
@@ -148,7 +134,7 @@ void main()
         float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 1e-4;
         vec3  specular    = numerator / denominator;
 
-        vec3 radiance = lightColor * (glightIntensity * attenuation);
+        vec3 radiance = lightColor * (glightIntensity * attenuation); 
         vec3 Lo       = (kD * baseColor / PI + specular) * radiance * NdotL;
 
         vec3 ambient  = vec3(0.03) * baseColor * ao;
@@ -157,7 +143,8 @@ void main()
         color = color / (color + vec3(1.0));
         color = pow(color, vec3(1.0/2.2));
         fragColor = vec4(color, 1.0);
-    } else {
+    } 
+    else {
         // Simple Blinn-Phong
         vec3 H = normalize(L + V);
         vec3 ambient  = 0.03 * baseColor * ao;

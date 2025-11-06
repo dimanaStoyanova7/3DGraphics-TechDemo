@@ -156,8 +156,8 @@ public:
 
             ShaderBuilder waterBuilder;
             waterBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/water_vert.glsl");
-            waterBuilder.addStage(GL_GEOMETRY_SHADER, RESOURCE_ROOT "shaders/water_geom.glsl");
-            waterBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/water_frag.glsl");
+            waterBuilder.addStage(GL_GEOMETRY_SHADER, RESOURCE_ROOT "shaders/shader_geom.glsl");
+            waterBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shader_frag.glsl");
             m_waterShader = waterBuilder.build();
 
             // Init path renderer (line shader) and default closed loop
@@ -466,13 +466,13 @@ public:
                 }
             }
 
-            //drawMirror(P, V);
+            drawMirror(P, V);
             drawWater(P, V);
 
             drawRobbotArm(P, V);
 
             // Optional curve overlay (same P,V)
-            //m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
+            m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
 
             m_window.swapBuffers();
         }
@@ -619,52 +619,15 @@ public:
         addTextures(m_meshes);
         addTextures(m_meshes_robotArm);
 
-            // Ambient map
-            if (!mesh.ambientTexture.empty()) {
-                const std::string path = mesh.ambientTexture;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique ambient texture: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
+        textureCache.emplace(m_waterGpuMesh.texturePath, Texture(m_waterGpuMesh.texturePath));
+        textureCache.emplace(m_waterGpuMesh.normalMap, Texture(m_waterGpuMesh.normalMap));
 
-            // Metalness map
-            if (!mesh.metalnessTexture.empty()) {
-                const std::string path = mesh.metalnessTexture;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique metalness texture: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
-
-            // Roughness map
-            if (!mesh.roughnessTexture.empty()) {
-                const std::string path = mesh.roughnessTexture;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique roughness texture: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
-
-            // Normal map
-            if (!mesh.normalMap.empty()) {
-                const std::string path = mesh.normalMap;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique normal map: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
         }
-    }
 
     void setCommonUniforms(Shader& shader, const glm::mat4& P) {
         // Per-pass uniforms - g because used in geometry shader and then passed
         glUniform3fv(shader.getUniformLocation("glightPos"), 1, glm::value_ptr(m_lampPos));
-        glUniform3fv(shader.getUniformLocation("gcolor"), 1, glm::value_ptr(m_lampColor));
+        glUniform3fv(shader.getUniformLocation("glightColor"), 1, glm::value_ptr(m_lampColor));
         //replace with proper camera logic
 
         glm::vec3 camera_position = getCameraPosition();
@@ -842,19 +805,26 @@ public:
         glUniformMatrix4fv(m_waterShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
         glUniformMatrix3fv(m_waterShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
         glUniform1f(m_waterShader.getUniformLocation("time"),  getTimeSeconds());
-        // Texture/material toggle (unchanged)
-        bool boundTexture = false;
 
-        // Diffuse map
-        bindTextureIfAvailable(m_waterGpuMesh.texturePath, m_waterShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
 
-        // Normal map
-        bindTextureIfAvailable(m_waterGpuMesh.normalMap, m_waterShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
-
-        if (!boundTexture) {
-            glUniform1i(m_waterShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-            glUniform1i(m_waterShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
+        if (m_useMaterial) {
+            glUniform1i(m_waterShader.getUniformLocation("useMaterial"), GL_TRUE);
         }
+        else {
+            bool boundTexture = false;
+
+            // Diffuse map
+            bindTextureIfAvailable(m_waterGpuMesh.texturePath, m_waterShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
+
+            // Normal map
+            bindTextureIfAvailable(m_waterGpuMesh.normalMap, m_waterShader, "normalMap", GL_TEXTURE1, "hasNormalMap", boundTexture);
+            std::cout << boundTexture << std::endl;
+
+            glUniform1i(m_waterShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+
+        }
+       
+        
         m_waterGpuMesh.draw(m_waterShader);
 
     }
@@ -866,8 +836,8 @@ public:
     void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
     {
         m_defaultShader.bind();
-        glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
-        glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
+        glUniform3fv(m_defaultShader.getUniformLocation("glightPos"), 1, glm::value_ptr(m_lampPos));
+        glUniform3fv(m_defaultShader.getUniformLocation("glightColor"), 1, glm::value_ptr(m_lampColor));
 
         setCommonUniforms(m_defaultShader, P);
 
@@ -958,10 +928,10 @@ public:
         if (m_moveBack) moveDir -= fwd;
 
         // Normalize movement
-        //if (glm::length(moveDir) > 0.0f) {
-         //   moveDir = glm::normalize(moveDir) * m_moveSpeed;
+        if (glm::length(moveDir) > 0.0f) {
+            moveDir = glm::normalize(moveDir) * m_moveSpeed;
             m_walleMatrix = glm::translate(m_walleMatrix, moveDir);
-        //}
+        }
         glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
         glm::vec3 nextPos = currPos + moveDir;
         // --- Rotation ---
@@ -970,8 +940,8 @@ public:
             m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-        glm::vec3 delta = nextPos - currPos;
-        m_walleMatrix = glm::translate(m_walleMatrix, delta);
+        //glm::vec3 delta = nextPos - currPos;
+        //m_walleMatrix = glm::translate(m_walleMatrix, delta);
         glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
         depenetrateXZ(posWS);
         m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
@@ -1058,6 +1028,7 @@ public:
                     textureCache.emplace(path, Texture(path));
                 }
             }
+
         }
     }
 
@@ -1196,7 +1167,7 @@ private:
     std::vector<GPUMesh> m_meshes;
     std::map<std::string, Texture> textureCache;
 	Texture m_texture;
-    bool m_useMaterial { true };
+    bool m_useMaterial { false };
 	//bool m_useTrackBall{ false };
 
     //Trackball m_trackball{ &m_window, glm::radians(80.0f) };
@@ -1215,7 +1186,7 @@ private:
     bool m_moveBack = false;
     bool m_rotateLeft = false;
     bool m_rotateRight = false;
-    float m_moveSpeed = 0.1f;
+    float m_moveSpeed = 0.05f;
     float m_rotationSpeed = 0.5f;
 
     float m_robotArmAngle1{ 0.0f };
@@ -1225,7 +1196,7 @@ private:
 
     float m_ra_da = 0.05;
 
-    Water m_water{ Water(100, 100, 100.0f, 100.0f) };
+    Water m_water{ Water(100, 100, 300.0f, 300.0f) };
     GPUMesh m_waterGpuMesh{ GPUMesh(m_water.getMesh()) };
 
     int side = -1;

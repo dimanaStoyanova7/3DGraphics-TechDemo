@@ -13,8 +13,9 @@ uniform mat4 gprojection;
 uniform mat4 modelMatrix;      
 uniform vec3 glightPos;   
 uniform vec3 gcamPos;     
-uniform vec3 gcolor;      
+uniform vec3 glightColor;      
 uniform bool nm;
+uniform bool hasNormalMap;
 
 // ===== outputs to fragment shader =====
 out vec3 fragPosition;
@@ -22,32 +23,25 @@ out vec3 fragNormal;
 out vec2 fragTexCoord;
 out vec3 lightPos;      
 out vec3 camPos;
-out vec3 lightColor;      
+out vec3 lightColor; 
 
 void main()
 {
-    if(nm){
+    if(nm && hasNormalMap){
         // Edges of the triangle (Calculations look correct for TBN)
         vec3 edge0 = gPosition[1] - gPosition[0];
         vec3 edge1 = gPosition[2] - gPosition[0];
         vec2 deltaUV0 = gTexCoord[1] - gTexCoord[0];
         vec2 deltaUV1 = gTexCoord[2] - gTexCoord[0];
 
-        float invDet = 1.0 / (deltaUV0.x * deltaUV1.y - deltaUV1.x * deltaUV0.y);
+        float invDet = 1.0f / (deltaUV0.x * deltaUV1.y - deltaUV1.x * deltaUV0.y);
 
         vec3 tangent = vec3(invDet * (deltaUV1.y * edge0 - deltaUV0.y * edge1));
         vec3 bitangent = vec3(invDet * (-deltaUV1.x * edge0 + deltaUV0.x * edge1));
 
-
-        vec3 T = normalize(vec3(modelMatrix * vec4(tangent, 0.0)));
-        vec3 B = normalize(vec3(modelMatrix * vec4(bitangent, 0.0)));
-        vec3 N = normalize(vec3(modelMatrix * vec4(cross(edge1, edge0), 0.0)));
-
-
-        //vec3 T = normalize(tangent);
-        //vec3 B = normalize(bitangent);
-        //vec3 N = normalize(cross(edge1, edge0));
-
+        vec3 T = normalize(vec3(modelMatrix * vec4(tangent, 0.0f)));
+        vec3 B = normalize(vec3(modelMatrix * vec4(bitangent, 0.0f)));
+        vec3 N = normalize(vec3(modelMatrix * vec4(cross(edge1, edge0), 0.0f)));
 
         //vec3 T = normalize(tangent);
         //vec3 B = normalize(bitangent);
@@ -76,7 +70,7 @@ void main()
             // Pass the TBN-transformed uniform data
             lightPos = lightPos_T;
             camPos = camPos_T;
-            lightColor = gcolor; 
+            lightColor = glightColor; 
 
             EmitVertex();
             }
@@ -95,7 +89,7 @@ void main()
 
             // Pass other data
             fragNormal = gNormal[i];    // World Space Normal
-            lightColor = gcolor;
+            lightColor = glightColor;
             fragTexCoord = gTexCoord[i];
             
             EmitVertex();

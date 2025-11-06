@@ -28,8 +28,8 @@ float omegaFromLambda(float lambda) {
 
 float waveDirectional(vec2 xz) {
     // params
-    const float A = 0.35;                 // amplitude
-    const float lambda = 18.0;            // wavelength (world units)
+    const float A = 1.5;                 // amplitude
+    const float lambda = 20.0;            // wavelength (world units)
     const vec2 dir = normalize(vec2(1.0, 0.25)); // travel direction in XZ
     const float phi = 0.0;                // phase offset
 
@@ -41,7 +41,7 @@ float waveDirectional(vec2 xz) {
 
 
 float waveStanding(vec2 xz) {
-    const float A = 0.20;
+    const float A = 1.0;
     const float lambda = 12.0;
     const vec2 axis = normalize(vec2(1.0, 0.0)); 
     float k = 6.28318530718 / lambda;
@@ -53,8 +53,8 @@ float waveStanding(vec2 xz) {
 
 
 float waveRadial(vec2 xz) {
-    const float A = 0.15;
-    const float lambda = 10.0;
+    const float A = 0.5;
+    const float lambda = 3.0;
     const vec2 center = vec2(0.0, 0.0);
     float r = length(xz - center);
 
@@ -68,8 +68,8 @@ float waveRadial(vec2 xz) {
 
 
 float waveChoppy(vec2 xz) {
-    const float A = 0.12;                 
-    const float lambda = 8.0;
+    const float A = 1.2;                 
+    const float lambda = 5.0;
     const vec2 dir = normalize(vec2(0.2, 1.0));
     const float phi = 1.3;
 
@@ -99,7 +99,7 @@ void main()
 
     gl_Position = mvpMatrix * vec4(newPostion, 1);
     
-    gPosition   = (modelMatrix * vec4(newPostion, 1)).xyz;
+    gPosition   = newPostion;
     gNormal     = normalModelMatrix * normal;
     gTexCoord   = texCoord;
 

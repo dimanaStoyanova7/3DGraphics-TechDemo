@@ -36,7 +36,7 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh, bool isMovable)
     //m_hasTextureCoords = static_cast<bool>(cpuMesh.material.kdTexture);
     m_hasTextureCoords = !cpuMesh.material.kdTexture.empty();
     if (m_hasTextureCoords) {
-        //std::cout << "Loading diffuse texture for mesh: " << cpuMesh.material.kdTexture.generic_string() << std::endl;
+        std::cout << "Loading diffuse texture for mesh: " << cpuMesh.material.kdTexture.generic_string() << std::endl;
         texturePath = cpuMesh.material.kdTexture.generic_string();
     }
 
@@ -60,7 +60,7 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh, bool isMovable)
 
     m_hasNormalMap = !cpuMesh.material.normalMap.empty();
     if (m_hasNormalMap) {
-        //std::cout << "Loading normal map for mesh: " << cpuMesh.material.normalMap.generic_string() << std::endl;
+        std::cout << "Loading normal map for mesh: " << cpuMesh.material.normalMap.generic_string() << std::endl;
         normalMap = cpuMesh.material.normalMap.generic_string();
     }
 
