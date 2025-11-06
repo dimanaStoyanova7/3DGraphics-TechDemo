@@ -13,11 +13,13 @@ struct ImageLoadingException : public std::runtime_error {
 
 class Texture {
 public:
+    Texture() = default;
     Texture(std::filesystem::path filePath);
     Texture(const Texture&) = delete;
     Texture(Texture&&);
-    ~Texture();
+    Texture(struct Image& img);
 
+    ~Texture();
     Texture& operator=(const Texture&) = delete;
     Texture& operator=(Texture&&) = default;
 

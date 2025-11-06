@@ -11,12 +11,12 @@ DISABLE_WARNINGS_POP()
 #include <cassert>
 #include <exception>
 #include <iostream>
+#include <map>
 #include <numeric>
 #include <span>
 #include <stack>
 #include <string>
 #include <tuple>
-#include <map>
 
 static void centerAndScaleToUnitMesh(std::span<Mesh> meshes);
 
@@ -130,9 +130,23 @@ std::vector<Mesh> loadMesh(const std::filesystem::path& file, const LoadMeshSett
             } else {
                 const auto& objMaterial = inMaterials[materialID];
                 mesh.material.kd = construct_vec3(objMaterial.diffuse);
+   
                 if (!objMaterial.diffuse_texname.empty()) {
-                    mesh.material.kdTexture = std::make_shared<Image>(baseDir / objMaterial.diffuse_texname);
+                    mesh.material.kdTexture = baseDir / objMaterial.diffuse_texname;
                 }
+                if (!objMaterial.ambient_texname.empty()) {
+                    mesh.material.ambientTexture = baseDir / objMaterial.ambient_texname;
+                }
+                if (!objMaterial.metallic_texname.empty()) {
+                    mesh.material.metalnessTexture = baseDir / objMaterial.metallic_texname;
+                }
+                if (!objMaterial.roughness_texname.empty()) {
+                    mesh.material.roughnessTexture = baseDir / objMaterial.roughness_texname;
+                }
+                if (!objMaterial.normal_texname.empty()) {
+                    mesh.material.normalMap = baseDir / objMaterial.normal_texname;
+                }
+              
                 mesh.material.ks = construct_vec3(objMaterial.specular);
                 mesh.material.shininess = objMaterial.shininess;
                 mesh.material.transparency = objMaterial.dissolve;
