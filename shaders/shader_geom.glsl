@@ -42,6 +42,11 @@ void main()
         vec3 B = normalize(vec3(modelMatrix * vec4(bitangent, 0.0f)));
         vec3 N = normalize(vec3(modelMatrix * vec4(cross(edge1, edge0), 0.0f)));
 
+        //vec3 T = normalize(tangent);
+        //vec3 B = normalize(bitangent);
+        //vec3 N = normalize(cross(edge1, edge0));
+
+
         mat3 TBN = mat3(T, B, N);
         TBN = transpose(TBN); // TBN is an orthogonal matrix
 

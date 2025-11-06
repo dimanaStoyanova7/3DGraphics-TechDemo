@@ -89,7 +89,7 @@ void main()
     
     vec3 N = normalize(fragNormal);
     
-    if(nm){   
+    if(nm && hasNormalMap){   
         N = texture(normalMap, fragTexCoord).rgb;
         N = N * 2.0 - 1.0;
      }
