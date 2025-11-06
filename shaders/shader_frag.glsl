@@ -1,6 +1,6 @@
 #version 410
 
-layout(std140) uniform Material // Must match the GPUMaterial defined in src/mesh.h
+layout(std140) uniform Material
 {
     vec3 kd;
 	vec3 ks;
@@ -26,8 +26,10 @@ uniform bool hasNormalMap;
 
 uniform bool pbr;
 uniform bool nm;
-
 uniform bool useMaterial;
+
+uniform float glightRadius;  
+uniform float glightIntensity;
 
 in vec3 fragPosition;
 in vec3 fragNormal;
@@ -35,41 +37,32 @@ in vec2 fragTexCoord;
 in vec3 lightPos;
 in vec3 camPos;
 in vec3 lightColor;
-in vec3 fragCrntPos;
 
 const float PI = 3.14159265359;
-
 
 layout(location = 0) out vec4 fragColor;
 
 vec3 fresnelSchlick(vec3 V, vec3 H, vec3 F0)
 {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - dot(V,H), 0.0, 1.0), 5.0);
-}  
+}
 
 float DistributionGGX(vec3 N, vec3 H, float roughness)
 {
-    float a      = roughness*roughness;
-    float a2     = a*a;
+    float a  = roughness*roughness;
+    float a2 = a*a;
     float NdotH  = max(dot(N, H), 0.0);
     float NdotH2 = NdotH*NdotH;
-	
-    float num   = a2;
     float denom = (NdotH2 * (a2 - 1.0) + 1.0);
     denom = PI * denom * denom;
-	
-    return num / denom;
+    return a2 / denom;
 }
 
 float GeometrySchlickGGX(float NdotV, float roughness)
 {
     float r = (roughness + 1.0);
     float k = (r*r) / 8.0;
-
-    float num   = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
-	
-    return num / denom;
+    return NdotV / (NdotV * (1.0 - k) + k);
 }
 
 float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
@@ -78,12 +71,26 @@ float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     float NdotL = max(dot(N, L), 0.0);
     float ggx2  = GeometrySchlickGGX(NdotV, roughness);
     float ggx1  = GeometrySchlickGGX(NdotL, roughness);
-	
     return ggx1 * ggx2;
 }
 
 void main()
+{
+    // View/light directions + correct distance
+    vec3  V     = normalize(camPos - fragPosition);
+    vec3  Lvec  = lightPos - fragPosition;
+    float dist  = max(length(Lvec), 1e-4);
+    vec3  L     = Lvec / dist;
 
+    vec3  N = normalize(fragNormal);
+    if (nm) {
+        N = texture(normalMap, fragTexCoord).rgb * 2.0 - 1.0;
+        N = normalize(N);
+    }
+
+    float r  = max(glightRadius, 1e-3);
+    float q  = dist / r;
+    float attenuation = 1.0 / (1.0 + q*q); // smooth 1/r^2-ish but stable
 
 {
     // --- PBR ---
@@ -118,58 +125,41 @@ void main()
         // normal visualization (debug)
         baseColor = normalize(fragNormal) * 0.5 + 0.5;
     }
-    
-    float NdotL = max(dot(N, L), 0.0);
-    if(pbr){
-        vec3 F0 = vec3(0.04); 
-        F0 = mix(F0, baseColor, metallic);
-        // reflectance equation
-        vec3 Lo = vec3(0.0);
 
-        float distance    = length(L);
-        float attenuation = 1.0 / (distance * distance);
-        vec3 radiance     = lightColor * attenuation;   
-    
-        // cook-torrance brdf
-        float NDF = DistributionGGX(N, H, roughness);        
-        float G   = GeometrySmith(N, V, L, roughness);      
-        vec3 F    = fresnelSchlick(H, V, F0);     
-    
-         vec3 kS = F;
-         vec3 kD = vec3(1.0) - kS;
-         kD *= 1.0 - metallic;	  
+    float NdotL = max(dot(N, L), 0.0);
+
+    if (pbr) {
+        vec3 F0 = vec3(0.04);
+        F0 = mix(F0, baseColor, metallic);
+        vec3  H   = normalize(L + V);
+        float NDF = DistributionGGX(N, H, roughness);
+        float G   = GeometrySmith(N, V, L, roughness);
+        vec3  F   = fresnelSchlick(V, H, F0);
+
+        vec3 kS = F;
+        vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
 
         vec3 numerator    = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-        vec3 specular     = numerator / denominator;        
+        float denominator = 4.0 * max(dot(N, V), 0.0) * NdotL + 1e-4;
+        vec3  specular    = numerator / denominator;
 
-        // add to outgoing radiance Lo
-                
-        Lo += (kD * baseColor / PI + specular) * radiance * NdotL;   
-  
-        vec3 ambient = vec3(0.03) * baseColor * ao;
-        vec3 color = ambient + Lo;
-	
+        vec3 radiance = lightColor * (glightIntensity * attenuation); 
+        vec3 Lo       = (kD * baseColor / PI + specular) * radiance * NdotL;
+
+        vec3 ambient  = vec3(0.03) * baseColor * ao;
+        vec3 color    = ambient + Lo;
+
         color = color / (color + vec3(1.0));
-        color = pow(color, vec3(1.0/2.2));  
-   
+        color = pow(color, vec3(1.0/2.2));
         fragColor = vec4(color, 1.0);
-     }
-     else{
-        // --- Simple point light shading (your addition) ---
-
-        vec3 ambient  = 0.05 * baseColor;
-        vec3 diffuse  = baseColor * lightColor * NdotL;
-
-        // Optional Blinn-Phong specular (uses ks & shininess from UBO)
-        // For full correctness, pass camera/world eye position; here we assume near origin.
-        vec3 V = normalize(-fragPosition);
-    
+    } else {
+        // Simple Blinn-Phong
+        vec3 H = normalize(L + V);
+        vec3 ambient  = 0.03 * baseColor * ao;
+        vec3 diffuse  = baseColor * lightColor * (NdotL * glightIntensity * attenuation);
         float specPow = max(shininess, 1.0);
         float specAmt = pow(max(dot(N, H), 0.0), specPow);
-        vec3 specular = ks * lightColor * specAmt;
-
+        vec3 specular = ks * lightColor * (specAmt * glightIntensity * attenuation);
         fragColor = vec4(ambient + diffuse + specular, 1.0);
-
-     }
+    }
 }

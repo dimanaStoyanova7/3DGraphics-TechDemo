@@ -30,6 +30,7 @@ DISABLE_WARNINGS_POP()
 #include <time.h>
 #include <unordered_set>
 #include <cstdint>
+#include <random>
 
 struct DynamicEnvCapture {
     GLuint cubemap = 0;
@@ -156,6 +157,7 @@ public:
                                 RESOURCE_ROOT "shaders/line_frag.glsl");
             m_bezierPath.setVisible(m_showCurve);
             m_prevTime = glfwGetTime();
+            start = clock();
 
             // Any new shaders can be added below in similar fashion.
             // ==> Don't forget to reconfigure CMake when you do!
@@ -173,6 +175,40 @@ public:
             };
             m_envMap.load(faces); 
             m_dynamicEnv.init(512);
+
+            glm::vec3 night = {0.10f, 0.18f, 0.40f};
+            glm::vec3 dawn  = {1.00f, 0.55f, 0.25f};
+            glm::vec3 noon  = {1.00f, 1.00f, 0.95f};
+            glm::vec3 dusk  = {1.00f, 0.45f, 0.25f};
+
+            auto seg = [&](glm::vec3 a, glm::vec3 b, glm::vec3 dirA, glm::vec3 dirB) {
+                Bezier3D c;
+                c.p0 = a;
+                c.p1 = a + dirA;
+                c.p2 = b - dirB;
+                c.p3 = b;
+                return c;
+            };
+            // gentle tangents
+            m_dayColor = {
+                seg(night, dawn, {0.00f,0.00f,0.00f}, {0.15f,0.10f,0.05f}),
+                seg(dawn,  noon, {0.15f,0.10f,0.05f}, {0.10f,0.10f,0.10f}),
+                seg(noon,  dusk, {0.10f,0.10f,0.10f}, {0.15f,0.08f,0.05f}),
+                seg(dusk,  night,{0.15f,0.08f,0.05f}, {0.00f,0.00f,0.00f})
+            };
+
+            auto seg1 = [&](float a, float b, float da, float db) {
+                Bezier1D c;
+                c.p0 = a; c.p1 = a + da; c.p2 = b - db; c.p3 = b;
+                return c;
+            };
+            // Intensities: night 0.10, dawn 0.60, noon 1.00, dusk 0.60, back to night
+            m_dayIntensity = {
+                seg1(0.10f, 0.60f, 0.00f, 0.10f),
+                seg1(0.60f, 1.00f, 0.10f, 0.10f),
+                seg1(1.00f, 0.60f, 0.10f, 0.10f),
+                seg1(0.60f, 0.10f, 0.10f, 0.00f)
+    };
         } catch (ShaderLoadingException e) {
             std::cerr << e.what() << std::endl;
         }
@@ -184,7 +220,7 @@ public:
     CamMode m_camMode = CamMode::BirdsEye;
     
     // Follow-cam parameters (object-space offset that’s transformed by m_modelMatrix)
-    glm::vec3 m_followOffsetOS { 0.0f, 0.8f, 2.0f }; // behind & slightly above
+    glm::vec3 m_followOffsetOS { 0.0f, 1.5f, 5.0f }; // behind & slightly above
 
     // --- Multiple views ---
     struct Viewport { int x, y, w, h; };
@@ -213,6 +249,39 @@ public:
     glm::vec3 m_lampPos  = {0.0f, 1.5f, 0.0f};
     glm::vec3 m_lampColor= {1.0f, 1.0f, 1.0f}; // bright, warm
     double m_prevTime    = 0.0;
+
+    // ---- Light reach + intensity/exposure ----
+    float m_lightRadius = 100.0f;          
+    float m_baseIntensity = 2.5f;      
+    float m_noonBoost     = 3.0f;     
+    float m_nightBoost    = 3.0f;       
+    float m_currentLightIntensity = 2.5f; 
+    float m_exposure = 5.5f;
+
+    // ---- Day/Night (Bezier) ----
+    struct Bezier1D {
+            float p0, p1, p2, p3;
+            float eval(float t) const {
+                float u = 1.0f - t;
+                return u*u*u*p0 + 3.0f*u*u*t*p1 + 3.0f*u*t*t*p2 + t*t*t*p3;
+            }
+        };
+    struct Bezier3D {
+            glm::vec3 p0, p1, p2, p3;
+            glm::vec3 eval(float t) const {
+                float u = 1.0f - t;
+                float b0 = u*u*u, b1 = 3.0f*u*u*t, b2 = 3.0f*u*t*t, b3 = t*t*t;
+                return b0*p0 + b1*p1 + b2*p2 + b3*p3;
+            }
+    };
+
+    float m_dayU        = 0.0f;     
+    float m_daySpeed    = 1.0f/60.0f; 
+    bool  m_pauseDay    = false;
+
+    std::vector<Bezier3D> m_dayColor;
+    std::vector<Bezier1D> m_dayIntensity;
+
 
     // env mapping feature
     std::vector<GPUMesh> m_mirrorMeshes;  // the dome mirror
@@ -296,11 +365,32 @@ public:
             double now = glfwGetTime();
             float dt = float(now - m_prevTime);
             m_prevTime = now;
+            // ---- Day/Night advance ----
+            if (!m_pauseDay) {
+                m_dayU += m_daySpeed * dt; 
+            }
+            int segCount = (int)m_dayColor.size();
+            float wrap = float(segCount);
+            while (m_dayU >= wrap) m_dayU -= wrap;
+            while (m_dayU < 0.0f)  m_dayU += wrap;
+
+            int   s = (int)std::floor(m_dayU) % segCount;
+            float t = m_dayU - std::floor(m_dayU);
+
+            glm::vec3 dayCol = m_dayColor[s].eval(t);
+            float     dayI   = m_dayIntensity[s].eval(t);
+            float     dayIAdj = glm::clamp(dayI * 3.0f, 0.0f, 1.0f);
+            float intensityScale = glm::mix(m_nightBoost, m_noonBoost, std::pow(dayIAdj, 0.6f));
+            m_currentLightIntensity = m_baseIntensity * intensityScale;
+            m_lampColor = dayCol * dayIAdj;
+   
+
 
             if (!m_pauseLamp) {
                 m_pathU += m_lampSpeed * dt; // segments per second
             }
             m_lampPos = m_bezierPath.evalGlobal(m_pathU);
+
             
 
             // Clear the screen (full-frame)
@@ -327,8 +417,8 @@ public:
                     return m_trackball.viewMatrix();
 
                 // Follow: camera at object-space offset transformed to world, looking at object origin
-                glm::vec3 objWorld = glm::vec3(m_modelMatrix * glm::vec4(0,0,0,1));
-                glm::vec3 camWorld = glm::vec3(m_modelMatrix * glm::vec4(m_followOffsetOS, 1.0f));
+                glm::vec3 objWorld = glm::vec3(m_walleMatrix * glm::vec4(0,0,0,1));
+                glm::vec3 camWorld = glm::vec3(m_walleMatrix * glm::vec4(m_followOffsetOS, 1.0f));
                 return glm::lookAt(camWorld, objWorld, glm::vec3(0,1,0));
             };
 
@@ -536,6 +626,11 @@ public:
         glUniform1i(shader.getUniformLocation("pbr"), m_pbr);
         glUniform1i(shader.getUniformLocation("nm"), m_normalMapping);
 
+        glUniform1f(shader.getUniformLocation("glightRadius"), m_lightRadius);
+        glUniform1f(shader.getUniformLocation("glightIntensity"), m_currentLightIntensity); 
+        glUniform1f(shader.getUniformLocation("uExposure"),       m_exposure);
+
+
         if (m_normalMapping)glUniformMatrix4fv(m_defaultShader.getUniformLocation("gprojection"), 1, GL_FALSE, glm::value_ptr(P));
     }
 
@@ -592,6 +687,14 @@ public:
         ImGui::Separator();
         ImGui::TextUnformatted("Camera");
         camModeCombo("Active view", m_camMode);
+        ImGui::Separator();
+        ImGui::TextUnformatted("Day/Night + Light");
+        ImGui::SliderFloat("Light radius",     &m_lightRadius,     1.0f, 20.0f);
+        ImGui::SliderFloat("Base intensity", &m_baseIntensity, 0.0f, 200.0f);
+        ImGui::Text("Computed intensity: %.2f", m_currentLightIntensity);
+        ImGui::Checkbox   ("Pause day/night",  &m_pauseDay);
+        ImGui::SliderFloat("Day speed (segs/s)", &m_daySpeed, 0.0f, 2.0f);
+
 
 
         ImGui::End();
@@ -677,9 +780,6 @@ public:
     void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
     {
         m_defaultShader.bind();
-        glUniform3fv(m_defaultShader.getUniformLocation("lightPos"), 1, glm::value_ptr(m_lampPos));
-        glUniform3fv(m_defaultShader.getUniformLocation("lightColor"), 1, glm::value_ptr(m_lampColor));
-
         setCommonUniforms(m_defaultShader, P);
 
         for (GPUMesh& mesh : m_meshes) {
@@ -757,32 +857,34 @@ public:
 
     void updateWallePosition()
     {
-        
+        //glm::vec3 fwdWS = glm::normalize(glm::vec3(m_walleMatrix * glm::vec4(0,0,-1,0)));
+        //fwdWS.y = 0.0f;
+        //if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
 
         glm::vec3 moveDir(0.0f);
+        //if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
+        //if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
 
         if (m_moveFwd)  moveDir += fwd;
         if (m_moveBack) moveDir -= fwd;
 
-        // Normalize movement
-        if (glm::length(moveDir) > 0.0f) {
-            moveDir = glm::normalize(moveDir) * m_moveSpeed;
-            m_walleMatrix = glm::translate(m_walleMatrix, moveDir);
-        }
-
-        // --- Rotation ---
-        // Rotate around the Y-axis (up axis)
+        glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
+        glm::vec3 nextPos = currPos + moveDir;
         if (m_rotateLeft)
             m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-        
-        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-        
-        if (clock() - start > duration) {
-            start = clock();
-            side *= -1;
-        }
+        glm::vec3 delta = nextPos - currPos;
+        m_walleMatrix = glm::translate(m_walleMatrix, delta);
+        glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
+        depenetrateXZ(posWS);
+        m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
+
+        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
+        //if (clock() - start > duration) {
+          //  start = clock();
+            //side *= -1;
+        //}
 
     }
 
@@ -1027,10 +1129,57 @@ private:
     float m_ra_da = 0.05;
 
     int side = -1;
-    clock_t start = clock();
+    clock_t start{};   
     double duration = CLOCKS_PER_SEC * 0.2;
 
-    glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1.0, 0, 0, 0));
+    glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
+
+    struct Obstacle {
+        glm::ivec2 tile;   // which tile it belongs to
+        glm::vec3  posWS;  // world position (center on ground)
+        float      radius; // for 2D circle collision
+    };
+
+    std::vector<Obstacle> m_obstacles;
+
+    std::mt19937 m_rng { std::random_device{}() };
+
+    const std::string m_propBarrier = RESOURCE_ROOT "resources/props/road_block_a/road_block_a.obj";
+
+    // helpers
+    void maybeSpawnObstacle(glm::ivec2 tc);
+    static float distXZ(const glm::vec3& a, const glm::vec3& b) {
+        glm::vec2 da(a.x - b.x, a.z - b.z);
+        return glm::length(da);
+    }
+
+    void depenetrateXZ(glm::vec3& posWS) {
+        const float walleRadius = 0.45f;     
+        const float skin        = 1e-3f;    
+        for (int iter = 0; iter < 4; ++iter) {
+            bool corrected = false;
+
+            for (const auto& obs : m_obstacles) {
+                glm::vec2 p(posWS.x - obs.posWS.x, posWS.z - obs.posWS.z);
+                float d2 = glm::dot(p, p);
+                float minR = walleRadius + obs.radius;
+                float minR2 = minR * minR;
+
+                if (d2 < minR2) {
+                    float d = std::sqrt(std::max(d2, 1e-8f));
+                    glm::vec2 n = (d > 1e-6f) ? (p / d) : glm::vec2(1.0f, 0.0f); // fallback normal
+                    float push = (minR - d) + skin;
+
+                    // push out along normal
+                    posWS.x += n.x * push;
+                    posWS.z += n.y * push;
+                    corrected = true;
+                }
+            }
+            if (!corrected) break;
+        }
+    }
+
     
 };
 void Application::spawnTileAt(glm::ivec2 tc)
@@ -1047,6 +1196,8 @@ void Application::spawnTileAt(glm::ivec2 tc)
     m_meshes.emplace_back(GPUMesh(t.generateMesh()));
 
     m_generatedTileKeys.insert(key);
+    maybeSpawnObstacle(tc);
+
 }
 
 void Application::updateTileStreaming()
@@ -1061,6 +1212,53 @@ void Application::updateTileStreaming()
     }
 }
 
+void Application::maybeSpawnObstacle(glm::ivec2 tc)
+{
+    if (tc == glm::ivec2(0, 0)) return;
+
+    std::uniform_real_distribution<float> p01(0.0f, 1.0f);
+    if (p01(m_rng) > 0.5f) return;
+
+    static const glm::vec2 slots[9] = {
+        {0.50f,0.50f},
+        {0.15f,0.15f}, {0.85f,0.15f}, {0.15f,0.85f}, {0.85f,0.85f},
+        {0.50f,0.15f}, {0.50f,0.85f}, {0.15f,0.50f}, {0.85f,0.50f}
+    };
+    std::uniform_int_distribution<int> slotPick(0, 8);
+    glm::vec2 uv = slots[slotPick(m_rng)];
+
+    glm::vec3 posWS = positionInTileWS(tc, uv.x, uv.y);
+
+    const float tileY = tileStartWS(tc).y;
+    const float barrierHalfHeight = 0.95f; 
+    posWS.y = tileY + barrierHalfHeight;
+
+    std::uniform_real_distribution<float> yawDeg(0.0f, 360.0f);
+    float yaw = glm::radians(yawDeg(m_rng));
+
+    const std::string file = m_propBarrier;
+    const glm::vec3   scale(1.0f);
+    // --- visual mesh ---
+    glm::mat4 M(1.0f);
+    M = glm::translate(M, posWS);
+    M = glm::rotate(M, yaw, glm::vec3(0,1,0));
+    M = glm::scale(M, scale);
+    auto propMeshes = GPUMesh::loadMeshGPU(M, file);
+    for (auto& g : propMeshes) m_meshes.emplace_back(std::move(g));
+
+    const float halfLen   = 3.00f; // half of barrier length along its long axis
+    const float halfWidth = 0.95f; // ~half its width; this is the circle radius
+
+    glm::vec3 dirF = glm::normalize(glm::vec3(std::cos(yaw), 0.0f, std::sin(yaw)));
+
+    glm::vec3 endA = posWS - dirF * halfLen;
+    glm::vec3 endB = posWS + dirF * halfLen;
+
+    // register colliders (XZ only; y is ignored elsewhere)
+    m_obstacles.push_back(Obstacle{ tc, endA, halfWidth });
+    m_obstacles.push_back(Obstacle{ tc, posWS, halfWidth }); 
+    m_obstacles.push_back(Obstacle{ tc, endB, halfWidth });
+}
 
 
 
