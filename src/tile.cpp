@@ -99,6 +99,9 @@ Mesh Tile::generateMesh() {
     mesh.material.ks = ks;
     mesh.material.shininess = shininess;
     mesh.material.transparency = transparency;
+    mesh.material.metallic = metallic;
+    mesh.material.roughness = roughness;
+    mesh.material.ao = ao;
     if (!kdTexture.empty()) mesh.material.kdTexture = kdTexture;
     else {
         mesh.material.kdTexture = RESOURCE_ROOT "resources/tileMetal.png";

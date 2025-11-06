@@ -15,7 +15,10 @@ GPUMaterial::GPUMaterial(const Material& material) :
     kd(material.kd),
     ks(material.ks),
     shininess(material.shininess),
-    transparency(material.transparency)
+    transparency(material.transparency),
+    roughness(material.roughness),
+    metallic(material.metallic),
+    ao(material.ao)
 	//kdTexture(material.kdTexture)
 {}
 
@@ -168,36 +171,57 @@ void GPUMesh::draw(const Shader& drawingShader)
     glDrawElements(GL_TRIANGLES, m_numIndices, GL_UNSIGNED_INT, nullptr);
 }
 
+#include <utility> // std::move
+
 void GPUMesh::moveInto(GPUMesh&& other)
 {
+    // If this already owns GPU objects, free them first.
     freeGpuMemory();
+
+    // --- move POD/handles ---
     m_numIndices = other.m_numIndices;
     m_hasTextureCoords = other.m_hasTextureCoords;
-    m_ibo = other.m_ibo;
-    m_vbo = other.m_vbo;
-    m_vao = other.m_vao;
-    m_uboMaterial = other.m_uboMaterial;
-    texturePath = other.texturePath;
-    ambientTexture = other.ambientTexture;
-    metalnessTexture = other.metalnessTexture;
-    roughnessTexture = other.roughnessTexture;
-    normalMap = other.normalMap;
-
     m_hasAmbientTexture = other.m_hasAmbientTexture;
     m_hasMetalnessTexture = other.m_hasMetalnessTexture;
     m_hasRoughnessTexture = other.m_hasRoughnessTexture;
     m_hasNormalMap = other.m_hasNormalMap;
 
+    m_ibo = other.m_ibo;
+    m_vbo = other.m_vbo;
+    m_vao = other.m_vao;
+    m_uboMaterial = other.m_uboMaterial;
+    texturePath = other.texturePath;
     m_id = other.m_id;
     m_isMovable = other.m_isMovable;
 
+    // --- move strings/paths ---
+    texturePath = std::move(other.texturePath);
+    ambientTexture = std::move(other.ambientTexture);
+    metalnessTexture = std::move(other.metalnessTexture);
+    roughnessTexture = std::move(other.roughnessTexture);
+    normalMap = std::move(other.normalMap);
 
+    // --- reset 'other' to a null/empty state so its destructor is safe ---
     other.m_numIndices = 0;
-    other.m_hasTextureCoords = other.m_hasTextureCoords;
+    other.m_hasTextureCoords = false;
+    other.m_hasAmbientTexture = false;
+    other.m_hasMetalnessTexture = false;
+    other.m_hasRoughnessTexture = false;
+    other.m_hasNormalMap = false;
+
     other.m_ibo = INVALID;
     other.m_vbo = INVALID;
     other.m_vao = INVALID;
     other.m_uboMaterial = INVALID;
+
+    other.m_id = -1;
+    other.m_isMovable = false;
+
+    other.texturePath.clear();
+    other.ambientTexture.clear();
+    other.metalnessTexture.clear();
+    other.roughnessTexture.clear();
+    other.normalMap.clear();
 }
 
 void GPUMesh::freeGpuMemory()

@@ -8,10 +8,13 @@ public:
 	glm::vec3 endPoint;
 
 	// -- texture properties ---
-	glm::vec3 kd; // Diffuse color
-	glm::vec3 ks{ 0.0f };
+	glm::vec3 kd{ 0.3f, 0.0f, 0.2f }; // Diffuse color
+	glm::vec3 ks{ 0.4f };
 	float shininess{ 1.0f };
 	float transparency{ 1.0f };
+	float  roughness{ 0.6f };
+	float metallic{ 0.5f };
+	float ao{ 1.0f };
 	std::filesystem::path kdTexture;
 
 

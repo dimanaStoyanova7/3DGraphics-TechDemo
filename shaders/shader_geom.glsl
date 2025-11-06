@@ -49,6 +49,11 @@ void main()
         //vec3 N = normalize(cross(edge1, edge0));
 
 
+        //vec3 T = normalize(tangent);
+        //vec3 B = normalize(bitangent);
+        //vec3 N = normalize(cross(edge1, edge0));
+
+
         mat3 TBN = mat3(T, B, N);
         TBN = transpose(TBN); // TBN is an orthogonal matrix
 
