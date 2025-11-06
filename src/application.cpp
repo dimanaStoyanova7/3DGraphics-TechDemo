@@ -107,8 +107,9 @@ public:
 
             ShaderBuilder shadowBuilder;
             shadowBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shadow_vert.glsl");
-            shadowBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "Shaders/shadow_frag.glsl");
+            shadowBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shadow_frag.glsl");
             m_shadowShader = shadowBuilder.build();
+            initShadowMap();
 
             ShaderBuilder envBuilder;
             envBuilder.addStage(GL_VERTEX_SHADER,   RESOURCE_ROOT "shaders/env_vert.glsl");
@@ -394,6 +395,8 @@ public:
             glm::vec3 mirrorPosWS = glm::vec3(m_mirrorModel[3]);
             updateDynamicEnv(mirrorPosWS);
 
+            renderShadowPass();
+
             // Draw one view (with lamp lighting + texture cache)
             {
                 m_defaultShader.bind();
@@ -447,6 +450,90 @@ public:
     }
 
     //-----------------------Helper Functions use throughout the file ----------------------------------
+
+    void initShadowMap()
+    {
+        // depth texture
+        glGenTextures(1, &m_shadowTex);
+        glBindTexture(GL_TEXTURE_2D, m_shadowTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_shadowSize, m_shadowSize, 0,
+                    GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // PCF needs linear
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        // enable hardware depth compare (sampler2DShadow)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+
+        // FBO
+        glGenFramebuffers(1, &m_shadowFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_shadowTex, 0);
+        glDrawBuffer(GL_NONE);
+        glReadBuffer(GL_NONE);
+
+        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE)
+            std::cerr << "Shadow FBO incomplete: " << std::hex << status << std::dec << std::endl;
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    glm::mat4 computeLightVP()
+    {
+        // Aim the light from the lamp toward the scene center (or your player)
+        glm::vec3 target = glm::vec3(0.0f, 0.5f, 0.0f); // tweak as you like
+        glm::vec3 up     = glm::vec3(0,1,0);
+        glm::mat4 V = glm::lookAt(m_lampPos, target, up);
+        // spot/directional-like perspective
+        glm::mat4 P = glm::perspective(glm::radians(70.0f), 1.0f, m_shadowNear, m_shadowFar);
+        return P * V;
+    }
+
+    void renderShadowPass()
+    {
+        // compute light VP each frame (lamp moves)
+        m_lightVP = computeLightVP();
+
+        GLint prevFbo, prevViewport[4];
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+        glGetIntegerv(GL_VIEWPORT, prevViewport);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
+        glViewport(0, 0, m_shadowSize, m_shadowSize);
+        glScissor(0, 0, m_shadowSize, m_shadowSize);
+        glClearDepth(1.0);
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        // reduce peter-panning a bit
+        glCullFace(GL_FRONT);
+
+        m_shadowShader.bind();
+        // We send lightVP + modelMatrix (shader builds gl_Position = lightVP * model * pos)
+        for (GPUMesh& mesh : m_meshes) {
+            glm::mat4 M = mesh.getIsMovable() ? m_walleMatrix : m_modelMatrix;
+            glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
+            glUniformMatrix4fv(m_shadowShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
+            mesh.draw(m_shadowShader);
+        }
+        for (GPUMesh& mesh : m_mirrorMeshes) {
+            glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
+            glUniformMatrix4fv(m_shadowShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_mirrorModel));
+            mesh.draw(m_shadowShader);
+        }
+
+        glCullFace(GL_BACK);
+
+        // restore
+        glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+        glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+        glScissor(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    }
+
+
     void onKeyPressed(int key, int mods) {
         //if (!m_activeFreeCam) return;
 
@@ -632,6 +719,14 @@ public:
 
 
         if (m_normalMapping)glUniformMatrix4fv(m_defaultShader.getUniformLocation("gprojection"), 1, GL_FALSE, glm::value_ptr(P));
+
+        glUniformMatrix4fv(shader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
+
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, m_shadowTex);
+        glUniform1i(shader.getUniformLocation("shadowMap"), 5);
+        glUniform1f(shader.getUniformLocation("shadowTexelSize"), 1.0f / float(m_shadowSize));
+        glUniform1f(shader.getUniformLocation("shadowBias"), 0.0015f);
     }
 
     glm::vec3 getCameraPosition() {
@@ -918,6 +1013,14 @@ private:
     std::mt19937 m_rng { std::random_device{}() };
 
     const std::string m_propBarrier = RESOURCE_ROOT "resources/props/road_block_a/road_block_a.obj";
+    
+    // --- Shadow mapping ---
+    GLuint m_shadowFbo = 0;
+    GLuint m_shadowTex = 0;
+    int    m_shadowSize = 2048;
+    float  m_shadowNear = 0.1f;
+    float  m_shadowFar  = 50.0f;
+    glm::mat4 m_lightVP {1.0f};
 
     // helpers
     void maybeSpawnObstacle(glm::ivec2 tc);

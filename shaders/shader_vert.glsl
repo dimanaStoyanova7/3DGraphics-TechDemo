@@ -3,7 +3,7 @@
 
 uniform mat4 mvpMatrix;
 uniform mat4 modelMatrix;
-
+uniform mat4 lightVP;
 uniform mat3 normalModelMatrix;
 
 layout(location = 0) in vec3 position;
@@ -14,13 +14,17 @@ layout(location = 2) in vec2 texCoord;
 out vec3 gPosition;
 out vec3 gNormal;
 out vec2 gTexCoord;
+out vec4 gLightClip;
 
 void main()
 {
     gl_Position = mvpMatrix * vec4(position, 1);
     
-    gPosition   = (modelMatrix * vec4(position, 1)).xyz;
-    gNormal     = normalModelMatrix * normal;
-    gTexCoord   = texCoord;
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+    gPosition     = worldPos.xyz;
+    gNormal       = normalModelMatrix * normal;
+    gTexCoord     = texCoord;
+
+    gLightClip    = lightVP * worldPos;
 
 }
