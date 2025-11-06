@@ -3,9 +3,13 @@
 layout(std140) uniform Material
 {
     vec3 kd;
-    vec3 ks;
-    float shininess;
-    float transparency;
+	vec3 ks;
+	float shininess;
+	float transparency;
+    float metallic;
+    float roughness;
+    float ao;
+
 };
 
 uniform sampler2D colorMap;
@@ -88,20 +92,37 @@ void main()
     float q  = dist / r;
     float attenuation = 1.0 / (1.0 + q*q); // smooth 1/r^2-ish but stable
 
-    float metallic  = 0.0;
-    float roughness = 0.5;
-    float ao        = 1.0;
-    if (hasMetalnessTexture) metallic  = texture(metalnessMap, fragTexCoord).r;
-    if (hasRoughnessTexture) roughness = texture(roughnessMap, fragTexCoord).r;
-    if (hasAmbientTexture)   ao        = texture(ambientMap,   fragTexCoord).r; // <<< no redeclare!
+{
+    // --- PBR ---
+    vec3 V = normalize(camPos - fragPosition);
+    vec3 L = normalize(lightPos - fragPosition);
+    vec3 H = normalize(L + V);
+    
+    vec3 N = normalize(fragNormal);
+    
+    if(nm && hasNormalMap){   
+        N = texture(normalMap, fragTexCoord).rgb;
+        N = N * 2.0 - 1.0;
+     }
 
-    // Base color selection
-    vec3 baseColor = vec3(1,0,0);
-    if (hasTexCoords) {
-        baseColor = texture(colorMap, fragTexCoord).rgb;
-    } else if (useMaterial) {
+    float metallic  = metallic;   // non-metal surface (plastic, wood, fabric)
+    float roughness = roughness;   // moderately rough (not glossy, not matte)
+    float ao        = ao;   // full ambient light (no occlusion)
+
+    if(hasMetalnessTexture && !useMaterial) metallic  = texture(metalnessMap, fragTexCoord).r;
+    if(hasRoughnessTexture && !useMaterial) roughness = texture(roughnessMap, fragTexCoord).r;
+    if(hasAmbientTexture && !useMaterial) float ao        = texture(ambientMap, fragTexCoord).r;
+
+    // --- Base color selection (matches your partner's behavior) ---
+    vec3 baseColor = vec3(1,0,0); // default red, if nothing else applies
+    if (useMaterial) {
         baseColor = kd;
-    } else {
+    }
+    else if (hasTexCoords) {
+        baseColor = texture(colorMap, fragTexCoord).rgb;
+    } 
+    else {
+        // normal visualization (debug)
         baseColor = normalize(fragNormal) * 0.5 + 0.5;
     }
 

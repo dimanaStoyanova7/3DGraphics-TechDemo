@@ -6,7 +6,7 @@ Tr 0.0000
 Tf 1.0000 1.0000 1.0000
 illum 1
 Ka 1 1 1
-Kd 1 1 1
+Kd 1 0 0
 Ke 0 0 0
 map_Kd Atlas_Metal_albedo.jpeg
 map_Pm Atlas_Metal_metallic.jpeg 
@@ -21,8 +21,10 @@ Tr 0.0000
 Tf 1.0000 1.0000 1.0000
 illum 1
 Ka 1 1 1
-Kd 1 1 1
+Kd 1 0 1
 Ke 0 0 0
+Pr 0.3
+Pm 1.0
 map_Kd Atlas_Painted_metal_albedo.jpeg
 map_Pm Atlas_Painted_metal_metallic.jpeg
 map_Pr Atlas_Painted_metal_roughness.jpeg
@@ -36,7 +38,7 @@ Tr 0.0000
 Tf 1.0000 1.0000 1.0000
 illum 1
 Ka 1 1 1
-Kd 1 1 1
+Kd 0 0 1
 Ke 0 0 0
 map_Kd Tread_albedo.jpeg
 map_Pm Tread_metallic.jpeg
