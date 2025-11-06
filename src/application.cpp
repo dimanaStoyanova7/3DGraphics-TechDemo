@@ -380,8 +380,8 @@ public:
                     return m_trackball.viewMatrix();
 
                 // Follow: camera at object-space offset transformed to world, looking at object origin
-                glm::vec3 objWorld = glm::vec3(m_modelMatrix * glm::vec4(0,0,0,1));
-                glm::vec3 camWorld = glm::vec3(m_modelMatrix * glm::vec4(m_followOffsetOS, 1.0f));
+                glm::vec3 objWorld = glm::vec3(m_walleMatrix * glm::vec4(0,0,0,1));
+                glm::vec3 camWorld = glm::vec3(m_walleMatrix * glm::vec4(m_followOffsetOS, 1.0f));
                 return glm::lookAt(camWorld, objWorld, glm::vec3(0,1,0));
             };
 
