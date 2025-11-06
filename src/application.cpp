@@ -580,7 +580,7 @@ public:
         ImGui::Begin("Views");
 
         ImGui::Text("Control Wall-e with arrows");
-        ImGui::Text("Control robot arm with 1 2 3 4");
+        ImGui::Text("Control robot arm with 1 2 3 4 and shift + 1 2 3 4");
 
         ImGui::Separator();
 
