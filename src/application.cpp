@@ -214,12 +214,12 @@ public:
     double m_prevTime    = 0.0;
 
     // ---- Light reach + intensity/exposure ----
-    float m_lightRadius = 100.0f;          // larger reach so “day” doesn’t wash out
-    float m_baseIntensity = 2.5f;       // baseline brightness
-    float m_noonBoost     = 1.0f;        // multiplier at noon
-    float m_nightBoost    = 1.0f;       // multiplier at night
-    float m_currentLightIntensity = 2.5f; // computed each frame from the curve
-    float m_exposure = 1.5f;             // tone-mapping exposure
+    float m_lightRadius = 100.0f;          
+    float m_baseIntensity = 2.5f;      
+    float m_noonBoost     = 3.0f;     
+    float m_nightBoost    = 3.0f;       
+    float m_currentLightIntensity = 2.5f; 
+    float m_exposure = 5.5f;
 
     // ---- Day/Night (Bezier) ----
     struct Bezier1D {
@@ -342,16 +342,18 @@ public:
 
             glm::vec3 dayCol = m_dayColor[s].eval(t);
             float     dayI   = m_dayIntensity[s].eval(t);
-            float intensityScale = glm::mix(m_nightBoost, m_noonBoost, std::pow(dayI, 0.6f));
+            float     dayIAdj = glm::clamp(dayI * 3.0f, 0.0f, 1.0f);
+            float intensityScale = glm::mix(m_nightBoost, m_noonBoost, std::pow(dayIAdj, 0.6f));
             m_currentLightIntensity = m_baseIntensity * intensityScale;
-
-            m_lampColor = dayCol * dayI;   
+            m_lampColor = dayCol * dayIAdj;
+   
 
 
             if (!m_pauseLamp) {
                 m_pathU += m_lampSpeed * dt; // segments per second
             }
             m_lampPos = m_bezierPath.evalGlobal(m_pathU);
+
             
 
             // Clear the screen (full-frame)
