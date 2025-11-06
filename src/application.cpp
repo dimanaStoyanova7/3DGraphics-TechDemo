@@ -183,7 +183,7 @@ public:
     CamMode m_camMode = CamMode::BirdsEye;
     
     // Follow-cam parameters (object-space offset that’s transformed by m_modelMatrix)
-    glm::vec3 m_followOffsetOS { 0.0f, 0.8f, 2.0f }; // behind & slightly above
+    glm::vec3 m_followOffsetOS { 0.0f, 1.5f, 5.0f }; // behind & slightly above
 
     // --- Multiple views ---
     struct Viewport { int x, y, w, h; };
