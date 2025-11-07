@@ -36,31 +36,31 @@ GPUMesh::GPUMesh(const Mesh& cpuMesh, bool isMovable)
     //m_hasTextureCoords = static_cast<bool>(cpuMesh.material.kdTexture);
     m_hasTextureCoords = !cpuMesh.material.kdTexture.empty();
     if (m_hasTextureCoords) {
-         std::cout << "Loading diffuse texture for mesh: " << cpuMesh.material.kdTexture.generic_string() << std::endl;
+         //std::cout << "Loading diffuse texture for mesh: " << cpuMesh.material.kdTexture.generic_string() << std::endl;
         texturePath = cpuMesh.material.kdTexture.generic_string();
     }
 
     m_hasAmbientTexture = !cpuMesh.material.ambientTexture.empty();
     if (m_hasAmbientTexture) {
-         std::cout << "Loading ambient texture for mesh: " << cpuMesh.material.ambientTexture.generic_string() << std::endl;
+         //std::cout << "Loading ambient texture for mesh: " << cpuMesh.material.ambientTexture.generic_string() << std::endl;
         ambientTexture = cpuMesh.material.ambientTexture.generic_string();
     }
 
     m_hasMetalnessTexture = !cpuMesh.material.metalnessTexture.empty();
     if (m_hasMetalnessTexture) {
-         std::cout << "Loading metalness texture for mesh: " << cpuMesh.material.metalnessTexture.generic_string() << std::endl;
+         //std::cout << "Loading metalness texture for mesh: " << cpuMesh.material.metalnessTexture.generic_string() << std::endl;
         metalnessTexture = cpuMesh.material.metalnessTexture.generic_string();
     }
 
     m_hasRoughnessTexture = !cpuMesh.material.roughnessTexture.empty();
     if (m_hasRoughnessTexture) {
-         std::cout << "Loading roughness texture for mesh: " << cpuMesh.material.roughnessTexture.generic_string() << std::endl;
+         //std::cout << "Loading roughness texture for mesh: " << cpuMesh.material.roughnessTexture.generic_string() << std::endl;
         roughnessTexture = cpuMesh.material.roughnessTexture.generic_string();
     }
 
     m_hasNormalMap = !cpuMesh.material.normalMap.empty();
     if (m_hasNormalMap) {
-         std::cout << "Loading normal map for mesh: " << cpuMesh.material.normalMap.generic_string() << std::endl;
+         //std::cout << "Loading normal map for mesh: " << cpuMesh.material.normalMap.generic_string() << std::endl;
         normalMap = cpuMesh.material.normalMap.generic_string();
     }
 

@@ -8,8 +8,7 @@ in vec3 gPosition[];
 in vec3 gNormal[];
 in vec2 gTexCoord[];
 
-// ===== Uniforms (single value per draw call =====
-uniform mat4 gprojection; 
+// ===== Uniforms (single value per draw call ===== 
 uniform mat4 modelMatrix;      
 uniform vec3 glightPos;   
 uniform vec3 gcamPos;     

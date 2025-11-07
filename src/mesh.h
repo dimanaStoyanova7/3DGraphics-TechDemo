@@ -59,6 +59,7 @@ public:
 
     bool hasTextureCoords() const;
     std::string texturePath;
+    void setTexturePath(std::string newPath) { texturePath = newPath; }
     std::string ambientTexture;
     std::string metalnessTexture;
     std::string roughnessTexture;
