@@ -24,6 +24,9 @@ struct GPUMaterial {
 	alignas(16) glm::vec3 ks{ 0.0f };
 	float shininess{ 1.0f };
 	float transparency{ 1.0f };
+    float metallic{ 0.0f };
+    float roughness{ 0.5f };
+    float ao{ 1.0f };
 
     // Optional texture that replaces kd; use as follows:
     // 
@@ -79,7 +82,6 @@ private:
     void moveInto(GPUMesh&&);
     void freeGpuMemory();
 
-private:
     static constexpr GLuint INVALID = 0xFFFFFFFF;
     
     // applies a transformation to cpu mesh

@@ -71,6 +71,43 @@ static const struct { glm::vec3 dir, up; } kCubeViews[6] = {
 };
 
 
+struct RobotArm {
+    // Index lists for each sub-part
+    std::array<int, 13> base{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+    std::array<int, 4>  first{ 13, 14, 15, 16 };
+    std::array<int, 10> second{ 17, 18, 19, 20, 21, 22, 23, 24, 25, 26 };
+    std::array<int, 5>  third{ 27, 28, 29, 30, 31 };
+    std::array<int, 8>  hand{ 32, 33, 34, 35, 36, 37, 38, 39 };
+
+
+    long indexOffset{ 0 };  // offset in your index buffer, if needed
+
+    //not updated automaticly :( so index offset needs to be added when arm is made
+    long startArm = 13 + indexOffset;
+    long startSecondJoint = 17 + indexOffset;
+    long starThirdJoint = 27 + indexOffset;
+    long startHand = 32 + indexOffset;
+    int size = 40;
+
+    glm::mat4 firstTransformation;
+    glm::mat4 secondTransformation;
+    glm::mat4 thirdTransformation;
+    glm::mat4 handRotation;
+
+    glm::vec3 offsetFirst = glm::vec3(0.0, 0.725, 0.0);
+    glm::vec3 offsetSecond = glm::vec3(0.0, 2.0, 1.2);
+    glm::vec3 offsetThird = glm::vec3(0.0, 3.2, 0.2);
+    glm::vec3 offsetFourth = glm::vec3(0.0, 2.9, -1.2);
+    
+    
+    glm::vec3 rotationAxis = glm::vec3(1.0, 0.0, 0.0);
+    glm::vec3 handAxis = glm::vec3(0.0, 0.0, 1.0);
+
+
+    glm::vec3 origin{ glm::vec3(0.0, 0.0, 0.0) };
+};
+
+
 class Application {
 public:
     Application()
@@ -446,33 +483,19 @@ public:
                     glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
                     glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));                    
 
-                    // Texture/material toggle (unchanged)
-                    bool boundTexture = false;
-                   
-                    // Diffuse map
-                    bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
-
-                    // Ambient map
-                    bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
-
-                    // Metalness map
-                    bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
-
-                    // Roughness map
-                    bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
-
-                    // Normal map
-                    bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
-
-                    if (!boundTexture) {
-                        glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                        glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
-                    }
+                    setMaterialsandTextures(mesh, m_defaultShader);
+                    
                     mesh.draw(m_defaultShader);
+                    for (int i = 0; i < 8; ++i) {
+                        glActiveTexture(GL_TEXTURE0 + i);
+                        glBindTexture(GL_TEXTURE_2D, 0);
+                    }
                 }
             }
 
             drawMirror(P, V);
+
+            drawRobbotArm(P, V);
 
             // Optional curve overlay (same P,V)
             m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
@@ -585,6 +608,22 @@ public:
         if (key == GLFW_KEY_LEFT)  m_rotateLeft = true;
         if (key == GLFW_KEY_RIGHT) m_rotateRight = true;
 
+        // Robot arm joint controls
+        bool shiftHeld = (mods & GLFW_MOD_SHIFT);
+
+        if (key == GLFW_KEY_1) {
+            m_robotArmAngle1 += shiftHeld ? -m_ra_da : m_ra_da;
+        }
+        if (key == GLFW_KEY_2) {
+            m_robotArmAngle2 += shiftHeld ? -m_ra_da : m_ra_da;
+        }
+        if (key == GLFW_KEY_3) {
+            m_robotArmAngle3 += shiftHeld ? -m_ra_da : m_ra_da;
+        }
+        if (key == GLFW_KEY_4) {
+            m_robotArmAngle4 += shiftHeld ? -m_ra_da : m_ra_da;
+        }
+
 
         if (key == GLFW_KEY_L) { m_showCurve = !m_showCurve; m_bezierPath.setVisible(m_showCurve); }
         if (key == GLFW_KEY_P) { m_pauseLamp = !m_pauseLamp; }
@@ -658,13 +697,23 @@ public:
 
         // -- Example static object with speciffic postion generation ---
         glm::mat4 identity = glm::mat4(1.0);
-        identity = glm::translate(identity, positionInTileWS({0,0}, 0.5f, 1.0f));
-        std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
+        glm::vec3 armPos = positionInTileWS({ 0,0 }, 0.5f, 1.0f);
+        identity = glm::translate(identity, armPos);
+        //std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
 
-        for (GPUMesh& gpumesh : mm) {
-            m_meshes.emplace_back(std::move(gpumesh));
-        }
+        identity = glm::scale(glm::rotate(identity, glm::radians(90.0f), glm::vec3(1.0, 0.0, 0.0)), glm::vec3(4.0));
+        m_meshes_robotArm  = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/robotArm/arm.obj");
+        m_robotArm.indexOffset = m_meshes_robotArm[0].getMeshID();
 
+        //update offsets
+        m_robotArm.startArm += m_robotArm.indexOffset;
+        m_robotArm.startSecondJoint += m_robotArm.indexOffset;
+        m_robotArm.starThirdJoint += m_robotArm.indexOffset;
+        m_robotArm.startHand += m_robotArm.indexOffset;
+        m_robotArm.origin = armPos;
+        
+ 
+            
         // mirror obj
         glm::vec3 carPos   = positionInTileWS({0,0}, 0.5f, 1.0f);
         glm::vec3 sceneCtr = positionInTileWS({0,0}, 0.5f, 0.5f);
@@ -679,59 +728,10 @@ public:
 
         m_mirrorMeshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/mirror/convex_mirror.obj");
 
-        // --- Create Textures ---
-        for (GPUMesh& mesh : m_meshes) {
+        addTextures(m_meshes);
+        addTextures(m_meshes_robotArm);
 
-            // Diffuse / color map
-            if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
-                const std::string path = mesh.texturePath;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique diffuse texture: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
-
-            // Ambient map
-            if (!mesh.ambientTexture.empty()) {
-                const std::string path = mesh.ambientTexture;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique ambient texture: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
-
-            // Metalness map
-            if (!mesh.metalnessTexture.empty()) {
-                const std::string path = mesh.metalnessTexture;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique metalness texture: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
-
-            // Roughness map
-            if (!mesh.roughnessTexture.empty()) {
-                const std::string path = mesh.roughnessTexture;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique roughness texture: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
-
-            // Normal map
-            if (!mesh.normalMap.empty()) {
-                const std::string path = mesh.normalMap;
-                if (textureCache.find(path) == textureCache.end()) {
-                    std::cout << "Loading unique normal map: " << path
-                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
-                    textureCache.emplace(path, Texture(path));
-                }
-            }
-        }
+        
     }
 
     void setCommonUniforms(Shader& shader, const glm::mat4& P) {
@@ -785,6 +785,13 @@ public:
         ImGui::Checkbox("Use material if no texture", &m_useMaterial);
         ImGui::SliderFloat("BirdsEye height", &m_birdsEyeWorldHalfSize, 0.5f, 10.0f);
 
+        ImGui::Text("Control Wall-e with arrows");
+        ImGui::SliderFloat("Wall-e forward speed", &m_moveSpeed, 0.0, 0.2);
+        ImGui::SliderFloat("Wall-e rotation speed", &m_rotationSpeed, 0.0, 1.0);
+
+        ImGui::Text("Control robot arm with 1 2 3 4 and shift + 1 2 3 4");
+
+        ImGui::Separator();
         ImGui::Checkbox("PBR", &m_pbr);
         ImGui::Checkbox("Normla mapping", &m_normalMapping);
 
@@ -823,6 +830,53 @@ public:
 
 
         ImGui::End();
+    }
+
+    void drawRobbotArm(const glm::mat4& P, const glm::mat4& V) {
+
+
+        m_defaultShader.bind();
+
+        setCommonUniforms(m_defaultShader, P);
+
+        for (GPUMesh& mesh : m_meshes_robotArm) {
+
+            // Choose per-mesh model matrix
+            glm::mat4 M{ 1.0f };
+            if (mesh.getMeshID()  < m_robotArm.startArm){
+                M = m_modelMatrix;
+            }
+            else if (mesh.getMeshID() >= m_robotArm.startArm && mesh.getMeshID()< m_robotArm.startSecondJoint) {
+                M = firstTransformationRA(m_robotArmAngle1, m_robotArm);
+            }
+            else if (mesh.getMeshID() >= m_robotArm.startSecondJoint && mesh.getMeshID() < m_robotArm.starThirdJoint) {
+                M = secondTransformationRA(m_robotArmAngle1, m_robotArmAngle2,  m_robotArm);
+                //M = m_modelMatrix;
+            }
+            else if (mesh.getMeshID() >= m_robotArm.starThirdJoint && mesh.getMeshID() < m_robotArm.startHand) {
+                M = thirdTransformationRA(m_robotArmAngle1, m_robotArmAngle2, m_robotArmAngle3, m_robotArm);
+                //M = m_modelMatrix;
+            }
+            else {
+                M = forthTransformationRA(m_robotArmAngle1, m_robotArmAngle2, m_robotArmAngle3, m_robotArmAngle4, m_robotArm);
+                //M = m_modelMatrix;
+            }
+            glm::mat4 MVP = P * V * M;
+            glm::mat3 NMM = glm::inverseTranspose(glm::mat3(M));
+
+            // Set per-mesh matrices
+            glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
+            glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
+            glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+
+            setMaterialsandTextures(mesh, m_defaultShader);
+            mesh.draw(m_defaultShader);
+            for (int i = 0; i < 8; ++i) {
+                glActiveTexture(GL_TEXTURE0 + i);
+                glBindTexture(GL_TEXTURE_2D, 0);
+            }
+        }
+
     }
 
     void drawMirror(const glm::mat4& P, const glm::mat4& V) {
@@ -869,28 +923,7 @@ public:
             glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"),      1, GL_FALSE, glm::value_ptr(M));
             glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"),1, GL_FALSE, glm::value_ptr(NMM));
 
-            bool boundTexture = false;
- 
-
-            // Diffuse map
-            bindTextureIfAvailable(mesh.texturePath, m_defaultShader, "colorMap", GL_TEXTURE0, "hasTexCoords",  boundTexture);
-
-            // Ambient map
-            bindTextureIfAvailable(mesh.ambientTexture, m_defaultShader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
-
-            // Metalness map
-            bindTextureIfAvailable(mesh.metalnessTexture, m_defaultShader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
-
-            // Roughness map
-            bindTextureIfAvailable(mesh.roughnessTexture, m_defaultShader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
-
-            // Normal map
-            bindTextureIfAvailable(mesh.normalMap, m_defaultShader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
-
-            if (!boundTexture) {
-                glUniform1i(m_defaultShader.getUniformLocation("hasTexCoords"), GL_FALSE);
-                glUniform1i(m_defaultShader.getUniformLocation("useMaterial"), m_useMaterial ? GL_TRUE : GL_FALSE);
-            }
+            setMaterialsandTextures(mesh, m_defaultShader);
             mesh.draw(m_defaultShader);
         }
     }
@@ -956,28 +989,33 @@ public:
 
     void updateWallePosition()
     {
-    glm::vec3 fwdWS = glm::normalize(glm::mat3(m_walleMatrix) * kWalleForwardOS);
-    fwdWS.y = 0.0f;
-    if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
+        glm::vec3 fwdWS = glm::normalize(glm::mat3(m_walleMatrix) * kWalleForwardOS);
+        fwdWS.y = 0.0f;
+        if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
 
-    glm::vec3 moveDir(0.0f);
-    if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
-    if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
-    glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
-    glm::vec3 nextPos = currPos + moveDir;
-    if (m_rotateLeft)
-        m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-    if (m_rotateRight)
-        m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-    glm::vec3 delta = nextPos - currPos;
-    m_walleMatrix = glm::translate(m_walleMatrix, delta);
-    glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
-    depenetrateXZ(posWS);
-    m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
-    if (clock() - start > duration) {
-        start = clock();
-        side *= -1;
-    }
+        glm::vec3 moveDir(0.0f);
+        if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
+        if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
+
+        glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
+        glm::vec3 nextPos = currPos + moveDir;
+
+        if (m_rotateLeft)
+            m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
+        if (m_rotateRight)
+            m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
+
+        glm::vec3 delta = nextPos - currPos;
+        m_walleMatrix = glm::translate(m_walleMatrix, delta);
+
+        glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
+        depenetrateXZ(posWS);
+        m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
+
+        if (clock() - start > duration) {
+            start = clock();
+            side *= -1;
+        }
 
     }
 
@@ -1002,6 +1040,183 @@ public:
         }
     }
 
+    void addTextures(std::vector<GPUMesh>& meshes){
+        // --- Create Textures ---
+        for (GPUMesh& mesh : meshes) {
+
+            // Diffuse / color map
+            if (mesh.hasTextureCoords() && !mesh.texturePath.empty()) {
+                const std::string path = mesh.texturePath;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique diffuse texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Ambient map
+            if (!mesh.ambientTexture.empty()) {
+                const std::string path = mesh.ambientTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique ambient texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Metalness map
+            if (!mesh.metalnessTexture.empty()) {
+                const std::string path = mesh.metalnessTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique metalness texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Roughness map
+            if (!mesh.roughnessTexture.empty()) {
+                const std::string path = mesh.roughnessTexture;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique roughness texture: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+
+            // Normal map
+            if (!mesh.normalMap.empty()) {
+                const std::string path = mesh.normalMap;
+                if (textureCache.find(path) == textureCache.end()) {
+                    std::cout << "Loading unique normal map: " << path
+                        << " (" << mesh.m_numIndices << " indices)" << std::endl;
+                    textureCache.emplace(path, Texture(path));
+                }
+            }
+        }
+    }
+
+    glm::mat4 firstTransformationRA(float angle1, RobotArm arm) {
+        // 1. Move to Pivot 1 (P1)
+        glm::mat4 M = glm::translate(glm::mat4(1.0f), arm.origin + arm.offsetFirst);
+
+        // 2. Rotate 1
+        M = glm::rotate(M, angle1, arm.rotationAxis);
+
+        // 3. Move back from P1
+        M = glm::translate(M, -arm.origin - arm.offsetFirst);
+
+        return M;
+    }
+
+    glm::mat4 secondTransformationRA(float angle1, float angle2, RobotArm arm) {
+        // 1. Move to Pivot 1 (P1)
+        glm::mat4 M = glm::translate(glm::mat4(1.0f), arm.origin + arm.offsetFirst);
+
+        // 2. Rotate 1
+        M = glm::rotate(M, angle1, arm.rotationAxis);
+
+        // 3. Translate from P1 to P2
+        M = glm::translate(M, arm.offsetSecond - arm.offsetFirst);
+
+        // 4. Rotate 2
+        M = glm::rotate(M, angle2, arm.rotationAxis);
+
+        // 5. Move back from Pivot 2 (P2)
+        M = glm::translate(M, -arm.origin - arm.offsetSecond);
+
+        return M;
+    }
+
+    glm::mat4 thirdTransformationRA(float angle1, float angle2, float angle3, RobotArm arm) {
+        // 1. Move to Pivot 1 (P1)
+        glm::mat4 M = glm::translate(glm::mat4(1.0f), arm.origin + arm.offsetFirst);
+
+        // 2. Rotate 1
+        M = glm::rotate(M, angle1, arm.rotationAxis);
+
+        // 3. Translate from P1 to P2
+        M = glm::translate(M, arm.offsetSecond - arm.offsetFirst);
+
+        // 4. Rotate 2
+        M = glm::rotate(M, angle2, arm.rotationAxis);
+
+        // 5. Translate from P2 to P3 (Correction applied here: connects P2 and P3)
+        M = glm::translate(M, arm.offsetThird - arm.offsetSecond);
+
+        // 6. Rotate 3
+        M = glm::rotate(M, angle3, arm.rotationAxis);
+
+        // 7. Move back from Pivot 3 (P3)
+        M = glm::translate(M, -arm.origin - arm.offsetThird);
+
+        return M;
+    }
+
+    glm::mat4 forthTransformationRA(float angle1, float angle2, float angle3, float angle4, RobotArm arm) {
+        // 1. Move to Pivot 1 (P1)
+        glm::mat4 M = glm::translate(glm::mat4(1.0f), arm.origin + arm.offsetFirst);
+
+        // 2. Rotate 1
+        M = glm::rotate(M, angle1, arm.rotationAxis);
+
+        // 3. Translate from P1 to P2
+        M = glm::translate(M, arm.offsetSecond - arm.offsetFirst);
+
+        // 4. Rotate 2
+        M = glm::rotate(M, angle2, arm.rotationAxis);
+
+        // 5. Translate from P2 to P3
+        M = glm::translate(M, arm.offsetThird - arm.offsetSecond);
+
+        // 6. Rotate 3
+        M = glm::rotate(M, angle3, arm.rotationAxis);
+
+        // 7. Translate from P3 to P4
+        M = glm::translate(M, arm.offsetFourth - arm.offsetThird);
+
+        // 8. Rotate 4
+        M = glm::rotate(M, angle4, arm.handAxis);
+
+        // 9. Move back from Pivot 4 (P4)
+        M = glm::translate(M, -arm.origin - arm.offsetFourth);
+
+        return M;
+    }
+
+    void setMaterialsandTextures(GPUMesh& mesh, Shader& shader) {
+        if (m_useMaterial) {
+            glUniform1i(shader.getUniformLocation("useMaterial"), GL_TRUE);
+        }
+        else {
+            // Texture/material toggle (unchanged)
+            bool boundTexture = false;
+
+            // Diffuse map
+            bindTextureIfAvailable(mesh.texturePath, shader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
+
+            // Ambient map
+            bindTextureIfAvailable(mesh.ambientTexture, shader, "ambientMap", GL_TEXTURE1, "hasAmbientTexture", boundTexture);
+
+            // Metalness map
+            bindTextureIfAvailable(mesh.metalnessTexture, shader, "metalnessMap", GL_TEXTURE2, "hasMetalnessTexture", boundTexture);
+
+            // Roughness map
+            bindTextureIfAvailable(mesh.roughnessTexture, shader, "roughnessMap", GL_TEXTURE3, "hasRoughnessTexture", boundTexture);
+
+            // Normal map
+            bindTextureIfAvailable(mesh.normalMap, shader, "normalMap", GL_TEXTURE4, "hasNormalMap", boundTexture);
+
+            if (!boundTexture) {
+                glUniform1i(shader.getUniformLocation("hasTexCoords"), GL_FALSE);
+
+            }
+        }
+
+    }
+
+
+
 private:
     Window m_window;
     // Trackball camera (debug cam)
@@ -1015,7 +1230,7 @@ private:
     std::vector<GPUMesh> m_meshes;
     std::map<std::string, Texture> textureCache;
 	Texture m_texture;
-    bool m_useMaterial { true };
+    bool m_useMaterial { false };
 	//bool m_useTrackBall{ false };
 
     // --- Magic plant ---
@@ -1046,6 +1261,9 @@ private:
     glm::mat4 m_modelMatrix { 1.0f };
     glm::mat4 m_walleMatrix{ 1.0f };
 
+    RobotArm m_robotArm;
+    std::vector<GPUMesh> m_meshes_robotArm;
+
     bool m_pbr = false;
     bool m_normalMapping = false;
     bool m_moveFwd = false;
@@ -1054,6 +1272,13 @@ private:
     bool m_rotateRight = false;
     float m_moveSpeed = 0.1f;
     float m_rotationSpeed = 0.5f;
+
+    float m_robotArmAngle1{ 0.0f };
+    float m_robotArmAngle2{ 0.0f };
+    float m_robotArmAngle3{ 0.0f };
+    float m_robotArmAngle4{ 0.0f };
+
+    float m_ra_da = 0.05;
 
     int side = -1;
     clock_t start{};   

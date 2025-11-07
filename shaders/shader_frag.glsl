@@ -3,9 +3,13 @@
 layout(std140) uniform Material
 {
     vec3 kd;
-    vec3 ks;
-    float shininess;
-    float transparency;
+	vec3 ks;
+	float shininess;
+	float transparency;
+    float metallic;
+    float roughness;
+    float ao;
+
 };
 
 uniform sampler2D colorMap;
@@ -117,23 +121,24 @@ void main()
     float q  = dist / r;
     float attenuation = 1.0 / (1.0 + q*q);
 
+    // --- Material parameters (textures or defaults) ---
     float metallic  = 0.0;
     float roughness = 0.5;
     float ao        = 1.0;
-    if (hasMetalnessTexture) metallic  = texture(metalnessMap, fragTexCoord).r;
-    if (hasRoughnessTexture) roughness = texture(roughnessMap, fragTexCoord).r;
-    if (hasAmbientTexture)   ao        = texture(ambientMap,   fragTexCoord).r;
 
-    vec3 baseColor = vec3(1.0, 0.0, 0.0);
-    if (hasTexCoords)       baseColor = texture(colorMap, fragTexCoord).rgb;
-    else if (useMaterial)   baseColor = kd;
-    else                    baseColor = normalize(fragNormal) * 0.5 + 0.5;
+    if (hasMetalnessTexture && !useMaterial)  metallic  = texture(metalnessMap, fragTexCoord).r;
+    if (hasRoughnessTexture && !useMaterial)  roughness = texture(roughnessMap, fragTexCoord).r;
+    if (hasAmbientTexture   && !useMaterial)  ao        = texture(ambientMap,   fragTexCoord).r;
+
+    // --- Base color selection ---
+    vec3 baseColor = vec3(1.0, 0.0, 0.0);        // fallback (debug)
+    if (useMaterial)       baseColor = kd;
+    else if (hasTexCoords) baseColor = texture(colorMap, fragTexCoord).rgb;
+    else                   baseColor = normalize(fragNormal) * 0.5 + 0.5;
 
     float NdotL = max(dot(N, L), 0.0);
 
-    // <<< NEW: compute shadow term >>>
-    float shadowTerm = computeShadow(N, L);        // 0..1 (0 = fully shadowed)
-    // keep a bit of ambient so shadows aren’t pitch-black
+    float shadowTerm = computeShadow(N, L);    
     float directScale = mix(0.15, 1.0, shadowTerm);
 
     if (pbr) {
