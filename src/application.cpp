@@ -377,11 +377,15 @@ public:
 
 
             if (!m_pauseLamp) {
-                m_pathU += m_lampSpeed * dt; // segments per second
+                m_pathU += m_lampSpeed * dt;
             }
             m_lampPos = m_bezierPath.evalGlobal(m_pathU);
 
-            
+            if (m_magicPlantSpawned) {
+                m_lampPos   = m_magicPlantPosWS + glm::vec3(0.0f, m_plantLampHeight, 0.0f);
+                m_lampColor = m_plantLampColor;
+            }
+
 
             // Clear the screen (full-frame)
             glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
@@ -512,14 +516,16 @@ public:
 
     glm::mat4 computeLightVP()
     {
-        // Aim the light from the lamp toward the scene center (or your player)
-        glm::vec3 target = glm::vec3(0.0f, 0.5f, 0.0f); // tweak as you like
-        glm::vec3 up     = glm::vec3(0,1,0);
-        glm::mat4 V = glm::lookAt(m_lampPos, target, up);
-        // spot/directional-like perspective
-        glm::mat4 P = glm::perspective(glm::radians(70.0f), 1.0f, m_shadowNear, m_shadowFar);
+        glm::vec3 target = m_magicPlantSpawned
+            ? m_magicPlantPosWS
+            : glm::vec3(0.0f, 0.5f, 0.0f);
+
+        glm::vec3 up = glm::vec3(0,1,0);
+        glm::mat4 V  = glm::lookAt(m_lampPos, target, up);
+        glm::mat4 P  = glm::perspective(glm::radians(70.0f), 1.0f, m_shadowNear, m_shadowFar);
         return P * V;
     }
+
 
     void renderShadowPass()
     {
@@ -1017,6 +1023,9 @@ private:
     glm::vec3 m_magicPlantPosWS {0.0f};
     std::vector<GPUMesh> m_magicPlantMeshes;
     int  m_magicPlantTileIndex = 5;  
+    // --- Little lamp pinned above the plant ---
+    float     m_plantLampHeight = 1.2f;                 
+    glm::vec3 m_plantLampColor  = glm::vec3(0.5f, 0.55f, 0.60f); 
 
     // --- Particles ---
     struct ParticleCPU { glm::vec3 pos, vel; float life; };
