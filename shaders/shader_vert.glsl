@@ -1,4 +1,3 @@
-// --- CORRECTED shaders/shader_vert.glsl ---
 #version 410 core
 
 uniform mat4 mvpMatrix;
@@ -19,7 +18,7 @@ void main()
 {
     gl_Position = mvpMatrix * vec4(position, 1);
     
-    gPosition   = (modelMatrix * vec4(position, 1)).xyz;
+    gPosition   = position;
     gNormal     = normalModelMatrix * normal;
     gTexCoord   = texCoord;
 

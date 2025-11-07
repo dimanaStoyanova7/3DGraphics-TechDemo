@@ -13,8 +13,9 @@ uniform mat4 gprojection;
 uniform mat4 modelMatrix;      
 uniform vec3 glightPos;   
 uniform vec3 gcamPos;     
-uniform vec3 gcolor;      
+uniform vec3 glightColor;      
 uniform bool nm;
+uniform bool hasNormalMap;
 
 // ===== outputs to fragment shader =====
 out vec3 fragPosition;
@@ -22,11 +23,11 @@ out vec3 fragNormal;
 out vec2 fragTexCoord;
 out vec3 lightPos;      
 out vec3 camPos;
-out vec3 lightColor;      
+out vec3 lightColor; 
 
 void main()
 {
-    if(nm){
+    if(nm && hasNormalMap){
         // Edges of the triangle (Calculations look correct for TBN)
         vec3 edge0 = gPosition[1] - gPosition[0];
         vec3 edge1 = gPosition[2] - gPosition[0];
@@ -69,7 +70,7 @@ void main()
             // Pass the TBN-transformed uniform data
             lightPos = lightPos_T;
             camPos = camPos_T;
-            lightColor = gcolor; 
+            lightColor = glightColor; 
 
             EmitVertex();
             }
@@ -88,7 +89,7 @@ void main()
 
             // Pass other data
             fragNormal = gNormal[i];    // World Space Normal
-            lightColor = gcolor;
+            lightColor = glightColor;
             fragTexCoord = gTexCoord[i];
             
             EmitVertex();
