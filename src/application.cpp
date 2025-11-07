@@ -494,14 +494,14 @@ public:
                     setMaterialsandTextures(mesh, m_defaultShader);
 
                     mesh.draw(m_defaultShader);
-                    for (int i = 0; i < 8; ++i) {
+                    for (int i = 0; i < 5; ++i) {
                         glActiveTexture(GL_TEXTURE0 + i);
                         glBindTexture(GL_TEXTURE_2D, 0);
                     }
                 }
             }
 
-            //drawMirror(P, V);
+            drawMirror(P, V);
             drawWater(P, V);
 
             drawRobbotArm(P, V);
@@ -882,10 +882,11 @@ public:
 
             setMaterialsandTextures(mesh, m_defaultShader);
             mesh.draw(m_defaultShader);
-            for (int i = 0; i < 8; ++i) {
+            for (int i = 0; i < 5; ++i) {
                 glActiveTexture(GL_TEXTURE0 + i);
                 glBindTexture(GL_TEXTURE_2D, 0);
             }
+            
         }
 
     }
