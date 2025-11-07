@@ -30,6 +30,7 @@ DISABLE_WARNINGS_POP()
 #include <string>
 #include <cmath>
 #include <time.h>
+#include <ctime>
 #include <unordered_set>
 #include <cstdint>
 #include <random>
@@ -388,6 +389,8 @@ public:
 
         struct Viewport { int x, y, w, h; };
 
+        
+
         while (!m_window.shouldClose()) {
             // This is your game loop
             // Put your real-time logic and rendering in here
@@ -395,6 +398,7 @@ public:
             imgui();
             updateWallePosition();
             updateTileStreaming();
+            updateTV();
 
             // --- Lamp path advance ---
             double now = glfwGetTime();
@@ -505,6 +509,7 @@ public:
             drawWater(P, V);
 
             drawRobbotArm(P, V);
+            drawTV(P, V);
 
             // Optional curve overlay (same P,V)
             m_bezierPath.drawCurve({0,0,fb.x,fb.y}, P, V, glm::vec3(0.9f, 0.2f, 0.1f));
@@ -720,9 +725,12 @@ public:
         m_robotArm.starThirdJoint += m_robotArm.indexOffset;
         m_robotArm.startHand += m_robotArm.indexOffset;
         m_robotArm.origin = armPos;
+        glm::mat4 move = glm::translate(glm::mat4(1.0f), glm::vec3(5.0, 0.5, 0.0));
+        move = glm::rotate(move, glm::radians(-90.0f), glm::vec3(0.0, 1.0, 0.0));
 
-
-
+        m_tv = GPUMesh::loadMeshGPU( move, RESOURCE_ROOT "resources/tv/screen.obj");
+        
+            
         // mirror obj
         glm::vec3 carPos   = positionInTileWS({0,0}, 0.5f, 1.0f);
         glm::vec3 sceneCtr = positionInTileWS({0,0}, 0.5f, 0.5f);
@@ -740,6 +748,14 @@ public:
         addTextures(m_meshes);
         addTextures(m_meshes_robotArm);
 
+        
+        for (int i = 0; i < frame_size; i++) {
+            std::string cur = screenContent + std::to_string(i) + ".png";
+            textureCache.emplace(cur, Texture(cur));
+        }
+
+        
+    }
         textureCache.emplace(m_waterGpuMesh.texturePath, Texture(m_waterGpuMesh.texturePath));
         textureCache.emplace(m_waterGpuMesh.normalMap, Texture(m_waterGpuMesh.normalMap));
 
@@ -887,6 +903,30 @@ public:
                 glBindTexture(GL_TEXTURE_2D, 0);
             }
             
+        }
+
+    }
+
+    void drawTV(const glm::mat4& P, const glm::mat4& V) {
+
+
+        m_defaultShader.bind();
+
+        setCommonUniforms(m_defaultShader, P);
+
+        for (GPUMesh& mesh : m_tv) {
+
+            glm::mat4 M = m_modelMatrix;
+            glm::mat4 MVP = P * V * M;
+            glm::mat3 NMM = glm::inverseTranspose(glm::mat3(M));
+
+            // Set per-mesh matrices
+            glUniformMatrix4fv(m_defaultShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
+            glUniformMatrix4fv(m_defaultShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
+            glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+
+            setMaterialsandTextures(mesh, m_defaultShader);
+            mesh.draw(m_defaultShader);
         }
 
     }
@@ -1080,6 +1120,30 @@ public:
         depenetrateXZ(posWS);
         m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
 
+    }
+    void updateTV()
+    {
+        clock_t now = clock();
+        //std::cout << now << std::endl;
+        //std::cout << tvStart << std::endl;
+        if (frame < 5) {
+            if (now - tvStart <= tvDuration) return; // not yet
+
+            m_tv[0].setTexturePath(screenContent + std::to_string(frame) + ".png");
+            tvStart = now;
+            std::cout << m_tv[0].texturePath << std::endl;
+            frame++;
+        }
+        if (frame < 50) {
+            if (now - tvStart <= tvDurationFrame) return; // not yet
+
+            m_tv[0].setTexturePath(screenContent + std::to_string(frame) + ".png");
+            tvStart = now;
+            std::cout << m_tv[0].texturePath << std::endl;
+            frame++;
+        }
+        frame = frame % frame_size;
+        
     }
 
     void bindTextureIfAvailable(
@@ -1329,6 +1393,11 @@ private:
     RobotArm m_robotArm;
     std::vector<GPUMesh> m_meshes_robotArm;
 
+    std::vector<GPUMesh> m_tv;
+    std::string screenContent =  RESOURCE_ROOT "resources/tv/textures/td";
+    int frame = 1;
+    int frame_size = 10;
+
     bool m_pbr = false;
     bool m_normalMapping = false;
     bool m_moveFwd = false;
@@ -1349,8 +1418,11 @@ private:
     GPUMesh m_waterGpuMesh{ GPUMesh(m_water.getMesh()) };
 
     int side = -1;
-    clock_t start{};
+    clock_t start = clock();   
+    clock_t tvStart = clock();
     double duration = CLOCKS_PER_SEC * 0.2;
+    double tvDuration = CLOCKS_PER_SEC * 5;
+    double tvDurationFrame = CLOCKS_PER_SEC / 20;
 
     glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
 

@@ -1,0 +1,13 @@
+# Blender 4.5.3 LTS MTL File: 'Sketchfab_2022_10_14_04_15_10.blend'
+# www.blender.org
+
+newmtl M_projector
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd  textures/td0.png
+map_refl textures/metallic.png
+map_Ke textures/emissive.png
+map_Ka textures/ao_texture.jpeg
