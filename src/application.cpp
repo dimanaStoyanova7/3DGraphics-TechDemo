@@ -755,11 +755,11 @@ public:
         }
 
         
-    }
         textureCache.emplace(m_waterGpuMesh.texturePath, Texture(m_waterGpuMesh.texturePath));
         textureCache.emplace(m_waterGpuMesh.normalMap, Texture(m_waterGpuMesh.normalMap));
 
         }
+
 
     void setCommonUniforms(Shader& shader, const glm::mat4& P) {
         // Per-pass uniforms - g because used in geometry shader and then passed
