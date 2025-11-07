@@ -4,6 +4,8 @@
 #include "tile.h"
 #include "BezierPath.h"
 #include "cubemap.h"
+#include "water.h"
+
 // Always include window first (because it includes glfw, which includes GL which needs to be included AFTER glew).
 // Can't wait for modules to fix this stuff...
 #include <framework/disable_all_warnings.h>
@@ -98,8 +100,8 @@ struct RobotArm {
     glm::vec3 offsetSecond = glm::vec3(0.0, 2.0, 1.2);
     glm::vec3 offsetThird = glm::vec3(0.0, 3.2, 0.2);
     glm::vec3 offsetFourth = glm::vec3(0.0, 2.9, -1.2);
-    
-    
+
+
     glm::vec3 rotationAxis = glm::vec3(1.0, 0.0, 0.0);
     glm::vec3 handAxis = glm::vec3(0.0, 0.0, 1.0);
 
@@ -153,6 +155,12 @@ public:
             envBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/env_frag.glsl");
             m_envShader = envBuilder.build();
 
+            ShaderBuilder waterBuilder;
+            waterBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/water_vert.glsl");
+            waterBuilder.addStage(GL_GEOMETRY_SHADER, RESOURCE_ROOT "shaders/shader_geom.glsl");
+            waterBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shader_frag.glsl");
+            m_waterShader = waterBuilder.build();
+
             // Particle shader
             ShaderBuilder particleBuilder;
             particleBuilder.addStage(GL_VERTEX_SHADER,   RESOURCE_ROOT "shaders/particle_vert.glsl");
@@ -178,7 +186,7 @@ public:
             // Pre-allocate CPU container
             m_particles.resize(m_maxParticles);
             for (auto& p : m_particles) { p.life = 0.0f; }
-            
+
             // Init path renderer (line shader) and default closed loop
             m_bezierPath.initGL(RESOURCE_ROOT "shaders/line_vert.glsl",
                                 RESOURCE_ROOT "shaders/line_frag.glsl");
@@ -247,7 +255,7 @@ public:
     CamMode m_camMode = CamMode::BirdsEye;
     
     // Follow-cam parameters (object-space offset that’s transformed by m_modelMatrix)
-    glm::vec3 m_followOffsetOS { 0.0f, 1.5f, 5.0f }; // behind & slightly above
+    glm::vec3 m_followOffsetOS { 0.0f, 0.8f, 2.0f }; // behind & slightly above
 
     // --- Multiple views ---
     struct Viewport { int x, y, w, h; };
@@ -278,11 +286,11 @@ public:
     double m_prevTime    = 0.0;
 
     // ---- Light reach + intensity/exposure ----
-    float m_lightRadius = 100.0f;          
-    float m_baseIntensity = 2.5f;      
-    float m_noonBoost     = 3.0f;     
-    float m_nightBoost    = 3.0f;       
-    float m_currentLightIntensity = 2.5f; 
+    float m_lightRadius = 100.0f;
+    float m_baseIntensity = 2.5f;
+    float m_noonBoost     = 3.0f;
+    float m_nightBoost    = 3.0f;
+    float m_currentLightIntensity = 2.5f;
     float m_exposure = 5.5f;
 
     // ---- Day/Night (Bezier) ----
@@ -302,8 +310,8 @@ public:
             }
     };
 
-    float m_dayU        = 0.0f;     
-    float m_daySpeed    = 1.0f/60.0f; 
+    float m_dayU        = 0.0f;
+    float m_daySpeed    = 1.0f/60.0f;
     bool  m_pauseDay    = false;
 
     std::vector<Bezier3D> m_dayColor;
@@ -394,7 +402,7 @@ public:
             m_prevTime = now;
             // ---- Day/Night advance ----
             if (!m_pauseDay) {
-                m_dayU += m_daySpeed * dt; 
+                m_dayU += m_daySpeed * dt;
             }
             int segCount = (int)m_dayColor.size();
             float wrap = float(segCount);
@@ -410,7 +418,7 @@ public:
             float intensityScale = glm::mix(m_nightBoost, m_noonBoost, std::pow(dayIAdj, 0.6f));
             m_currentLightIntensity = m_baseIntensity * intensityScale;
             m_lampColor = dayCol * dayIAdj;
-   
+
 
 
             if (!m_pauseLamp) {
@@ -484,7 +492,7 @@ public:
                     glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));                    
 
                     setMaterialsandTextures(mesh, m_defaultShader);
-                    
+
                     mesh.draw(m_defaultShader);
                     for (int i = 0; i < 8; ++i) {
                         glActiveTexture(GL_TEXTURE0 + i);
@@ -494,6 +502,7 @@ public:
             }
 
             drawMirror(P, V);
+            drawWater(P, V);
 
             drawRobbotArm(P, V);
 
@@ -711,9 +720,9 @@ public:
         m_robotArm.starThirdJoint += m_robotArm.indexOffset;
         m_robotArm.startHand += m_robotArm.indexOffset;
         m_robotArm.origin = armPos;
-        
- 
-            
+
+
+
         // mirror obj
         glm::vec3 carPos   = positionInTileWS({0,0}, 0.5f, 1.0f);
         glm::vec3 sceneCtr = positionInTileWS({0,0}, 0.5f, 0.5f);
@@ -731,13 +740,15 @@ public:
         addTextures(m_meshes);
         addTextures(m_meshes_robotArm);
 
-        
-    }
+        textureCache.emplace(m_waterGpuMesh.texturePath, Texture(m_waterGpuMesh.texturePath));
+        textureCache.emplace(m_waterGpuMesh.normalMap, Texture(m_waterGpuMesh.normalMap));
+
+        }
 
     void setCommonUniforms(Shader& shader, const glm::mat4& P) {
         // Per-pass uniforms - g because used in geometry shader and then passed
         glUniform3fv(shader.getUniformLocation("glightPos"), 1, glm::value_ptr(m_lampPos));
-        glUniform3fv(shader.getUniformLocation("gcolor"), 1, glm::value_ptr(m_lampColor));
+        glUniform3fv(shader.getUniformLocation("glightColor"), 1, glm::value_ptr(m_lampColor));
         //replace with proper camera logic
 
         glm::vec3 camera_position = getCameraPosition();
@@ -748,7 +759,7 @@ public:
         glUniform1i(shader.getUniformLocation("nm"), m_normalMapping);
 
         glUniform1f(shader.getUniformLocation("glightRadius"), m_lightRadius);
-        glUniform1f(shader.getUniformLocation("glightIntensity"), m_currentLightIntensity); 
+        glUniform1f(shader.getUniformLocation("glightIntensity"), m_currentLightIntensity);
         glUniform1f(shader.getUniformLocation("uExposure"),       m_exposure);
 
 
@@ -909,9 +920,57 @@ public:
         // TODO - MAYBE REMOVE
         glEnable(GL_CULL_FACE);
     }
+
+    void drawWater(const glm::mat4& P, const glm::mat4& V) {
+
+        m_waterShader.bind();
+
+        setCommonUniforms(m_waterShader, P);
+
+        // Choose per-mesh model matrix
+        glm::mat4 M = m_modelMatrix;
+        glm::mat4 MVP = P * V * M;
+        glm::mat3 NMM = glm::inverseTranspose(glm::mat3(M));
+
+        // Set per-mesh matrices
+        glUniformMatrix4fv(m_waterShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
+        glUniformMatrix4fv(m_waterShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
+        glUniformMatrix3fv(m_waterShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+        glUniform1f(m_waterShader.getUniformLocation("time"),  getTimeSeconds());
+
+
+        if (m_useMaterial) {
+            glUniform1i(m_waterShader.getUniformLocation("useMaterial"), GL_TRUE);
+        }
+        else {
+            bool boundTexture = false;
+
+            // Diffuse map
+            bindTextureIfAvailable(m_waterGpuMesh.texturePath, m_waterShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
+
+            // Normal map
+            bindTextureIfAvailable(m_waterGpuMesh.normalMap, m_waterShader, "normalMap", GL_TEXTURE1, "hasNormalMap", boundTexture);
+            std::cout << boundTexture << std::endl;
+
+            glUniform1i(m_waterShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+
+        }
+       
+        
+        m_waterGpuMesh.draw(m_waterShader);
+
+    }
+
+    float getTimeSeconds() {
+        return (float)clock() / (float)CLOCKS_PER_SEC;
+    }
+
     void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
     {
         m_defaultShader.bind();
+        glUniform3fv(m_defaultShader.getUniformLocation("glightPos"), 1, glm::value_ptr(m_lampPos));
+        glUniform3fv(m_defaultShader.getUniformLocation("glightColor"), 1, glm::value_ptr(m_lampColor));
+
         setCommonUniforms(m_defaultShader, P);
 
         for (GPUMesh& mesh : m_meshes) {
@@ -994,20 +1053,27 @@ public:
         if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
 
         glm::vec3 moveDir(0.0f);
-        if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
-        if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
+        //if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
+        //if (m_moveBack) moveDir -= fwdWS * m_moveSpeed;
 
+        if (m_moveFwd)  moveDir += fwd;
+        if (m_moveBack) moveDir -= fwd;
+
+        // Normalize movement
+        if (glm::length(moveDir) > 0.0f) {
+            moveDir = glm::normalize(moveDir) * m_moveSpeed;
+            m_walleMatrix = glm::translate(m_walleMatrix, moveDir);
+        }
         glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
         glm::vec3 nextPos = currPos + moveDir;
-
+        // --- Rotation ---
+        // Rotate around the Y-axis (up axis)
         if (m_rotateLeft)
             m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
         if (m_rotateRight)
             m_walleMatrix = glm::rotate(m_walleMatrix, -glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
-
-        glm::vec3 delta = nextPos - currPos;
-        m_walleMatrix = glm::translate(m_walleMatrix, delta);
-
+        //glm::vec3 delta = nextPos - currPos;
+        //m_walleMatrix = glm::translate(m_walleMatrix, delta);
         glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
         depenetrateXZ(posWS);
         m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
@@ -1093,6 +1159,7 @@ public:
                     textureCache.emplace(path, Texture(path));
                 }
             }
+
         }
     }
 
@@ -1226,6 +1293,7 @@ private:
     // Shader for default rendering and for depth rendering
     Shader m_defaultShader;
     Shader m_shadowShader;
+    Shader m_waterShader;
 
     std::vector<GPUMesh> m_meshes;
     std::map<std::string, Texture> textureCache;
@@ -1270,7 +1338,7 @@ private:
     bool m_moveBack = false;
     bool m_rotateLeft = false;
     bool m_rotateRight = false;
-    float m_moveSpeed = 0.1f;
+    float m_moveSpeed = 0.05f;
     float m_rotationSpeed = 0.5f;
 
     float m_robotArmAngle1{ 0.0f };
@@ -1280,8 +1348,11 @@ private:
 
     float m_ra_da = 0.05;
 
+    Water m_water{ Water(100, 100, 300.0f, 300.0f) };
+    GPUMesh m_waterGpuMesh{ GPUMesh(m_water.getMesh()) };
+
     int side = -1;
-    clock_t start{};   
+    clock_t start{};
     double duration = CLOCKS_PER_SEC * 0.2;
 
     struct Obstacle {
@@ -1312,8 +1383,8 @@ private:
     }
 
     void depenetrateXZ(glm::vec3& posWS) {
-        const float walleRadius = 0.45f;     
-        const float skin        = 1e-3f;    
+        const float walleRadius = 0.45f;
+        const float skin        = 1e-3f;
         for (int iter = 0; iter < 4; ++iter) {
             bool corrected = false;
 
@@ -1420,7 +1491,7 @@ private:
     }
 
 
-    
+
 };
 void Application::spawnTileAt(glm::ivec2 tc)
 {
@@ -1433,6 +1504,7 @@ void Application::spawnTileAt(glm::ivec2 tc)
     glm::vec3 end   = start + glm::vec3(m_tileWidth, 0.0f, m_tileDepth);
 
     Tile t(start, end);
+    GPUMesh gm = GPUMesh(t.generateMesh());
     m_meshes.emplace_back(GPUMesh(t.generateMesh()));
 
     m_generatedTileKeys.insert(key);
@@ -1485,7 +1557,7 @@ void Application::maybeSpawnObstacle(glm::ivec2 tc)
     glm::vec3 posWS = positionInTileWS(tc, uv.x, uv.y);
 
     const float tileY = tileStartWS(tc).y;
-    const float barrierHalfHeight = 0.95f; 
+    const float barrierHalfHeight = 0.95f;
     posWS.y = tileY + barrierHalfHeight;
 
     std::uniform_real_distribution<float> yawDeg(0.0f, 360.0f);
@@ -1511,7 +1583,7 @@ void Application::maybeSpawnObstacle(glm::ivec2 tc)
 
     // register colliders (XZ only; y is ignored elsewhere)
     m_obstacles.push_back(Obstacle{ tc, endA, halfWidth });
-    m_obstacles.push_back(Obstacle{ tc, posWS, halfWidth }); 
+    m_obstacles.push_back(Obstacle{ tc, posWS, halfWidth });
     m_obstacles.push_back(Obstacle{ tc, endB, halfWidth });
 }
 

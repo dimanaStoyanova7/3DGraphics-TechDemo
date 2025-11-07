@@ -1,5 +1,4 @@
 #version 410
-
 layout(std140) uniform Material
 {
     vec3 kd;
@@ -119,16 +118,20 @@ void main()
 
     float r  = max(glightRadius, 1e-3);
     float q  = dist / r;
-    float attenuation = 1.0 / (1.0 + q*q);
+    float attenuation = 1.0 / (1.0 + q*q); // smooth 1/r^2-ish but stable
+   
+    if(nm && hasNormalMap){   
+        N = texture(normalMap, fragTexCoord).rgb;
+        N = N * 2.0 - 1.0;
+     }
 
-    // --- Material parameters (textures or defaults) ---
-    float metallic  = 0.0;
-    float roughness = 0.5;
-    float ao        = 1.0;
+    float metallic  = metallic;   // non-metal surface (plastic, wood, fabric)
+    float roughness = roughness;   // moderately rough (not glossy, not matte)
+    float ao        = ao;   // full ambient light (no occlusion)
 
-    if (hasMetalnessTexture && !useMaterial)  metallic  = texture(metalnessMap, fragTexCoord).r;
-    if (hasRoughnessTexture && !useMaterial)  roughness = texture(roughnessMap, fragTexCoord).r;
-    if (hasAmbientTexture   && !useMaterial)  ao        = texture(ambientMap,   fragTexCoord).r;
+    if(hasMetalnessTexture && !useMaterial) metallic  = texture(metalnessMap, fragTexCoord).r;
+    if(hasRoughnessTexture && !useMaterial) roughness = texture(roughnessMap, fragTexCoord).r;
+    if(hasAmbientTexture && !useMaterial) float ao        = texture(ambientMap, fragTexCoord).r;
 
     // --- Base color selection ---
     vec3 baseColor = vec3(1.0, 0.0, 0.0);        // fallback (debug)
@@ -163,7 +166,9 @@ void main()
         color = color / (color + vec3(1.0));
         color = pow(color, vec3(1.0/2.2));
         fragColor = vec4(color, 1.0);
-    } else {
+    } 
+    else {
+        // Simple Blinn-Phong
         vec3 H = normalize(L + V);
         vec3 ambient  = 0.03 * baseColor * ao;
         vec3 diffuse  = baseColor * lightColor * (NdotL * glightIntensity * attenuation) * directScale; // <<< scaled

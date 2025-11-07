@@ -16,6 +16,7 @@ uniform vec3 glightPos;
 uniform vec3 gcamPos;
 uniform vec3 gcolor;
 uniform bool nm;
+uniform bool hasNormalMap;
 
 // ===== outputs to fragment shader =====
 out vec3 fragPosition;
@@ -28,7 +29,8 @@ out vec4 fLightClip;
 
 void main()
 {
-    if (nm) {
+    if(nm && hasNormalMap){
+        // Edges of the triangle (Calculations look correct for TBN)
         vec3 edge0 = gPosition[1] - gPosition[0];
         vec3 edge1 = gPosition[2] - gPosition[0];
         vec2 deltaUV0 = gTexCoord[1] - gTexCoord[0];
@@ -56,12 +58,23 @@ void main()
             lightColor   = gcolor;
             fLightClip   = gLightClip[i];   // pass through
             EmitVertex();
-        }
-    } else {
-        for (int i = 0; i < 3; ++i) {
-            gl_Position  = gl_in[i].gl_Position;
-            fragPosition = gPosition[i];
-            fragNormal   = gNormal[i];
+            }
+     }
+     else
+     {
+        // === WORLD SPACE PATH (No Normal Mapping) ===
+        
+        for (int i = 0; i < 3; ++i)
+        {
+            
+            gl_Position = gl_in[i].gl_Position; 
+            fragPosition = gPosition[i]; // World Space Position
+            lightPos = glightPos;       // World Space Light Position
+            camPos = gcamPos;           // World Space Camera Position
+
+            // Pass other data
+            fragNormal = gNormal[i];    // World Space Normal
+            lightColor = glightColor;
             fragTexCoord = gTexCoord[i];
             lightPos     = glightPos;
             camPos       = gcamPos;

@@ -1,4 +1,3 @@
-// --- CORRECTED shaders/shader_vert.glsl ---
 #version 410 core
 
 uniform mat4 mvpMatrix;
