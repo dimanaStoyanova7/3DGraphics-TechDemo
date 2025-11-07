@@ -40,8 +40,10 @@ void main()
         vec3 bitangent = invDet * (-deltaUV1.x * edge0 + deltaUV0.x * edge1);
 
         vec3 T = normalize(vec3(modelMatrix * vec4(tangent,   0.0)));
-        vec3 B = normalize(vec3(modelMatrix * vec4(bitangent, 0.0)));
         vec3 N = normalize(vec3(modelMatrix * vec4(cross(edge1, edge0), 0.0)));
+        T = normalize(T - dot(T, N) * N);
+        // then retrieve perpendicular vector B with the cross product of T and N
+        vec3 B = cross(N, T);
 
         mat3 TBN = transpose(mat3(T, B, N));
         vec3 lightPos_T = TBN * glightPos;
@@ -49,7 +51,7 @@ void main()
 
         for (int i = 0; i < 3; ++i) {
             gl_Position  = gl_in[i].gl_Position;
-            fragPosition = TBN * gPosition[i];
+            fragPosition = TBN * vec3(modelMatrix * vec4(gPosition[i], 1.0));
             fragNormal   = gNormal[i];
             fragTexCoord = gTexCoord[i];
             lightPos     = lightPos_T;
@@ -66,7 +68,7 @@ void main()
         for (int i = 0; i < 3; ++i)
         {
             gl_Position = gl_in[i].gl_Position; 
-            fragPosition =  vec3 (modelMatrix * vec4(gPosition[i], 0.0)); 
+            fragPosition =  vec3 (modelMatrix * vec4(gPosition[i], 1.0)); 
             lightPos = glightPos;       
             camPos = gcamPos;           
             fragNormal = gNormal[i];    

@@ -253,17 +253,17 @@ public:
 
     // --- Camera modes ---
     enum class CamMode { BirdsEye = 0, Follow = 1, Trackball = 2 };
-    CamMode m_camMode = CamMode::BirdsEye;
+    CamMode m_camMode = CamMode::Trackball;
     
     // Follow-cam parameters (object-space offset that’s transformed by m_modelMatrix)
-    glm::vec3 m_followOffsetOS { 0.0f, 0.8f, 2.0f }; // behind & slightly above
+    glm::vec3 m_followOffsetOS { -1.0f, 2.0f, 0.0f }; // behind & slightly above
 
     // --- Multiple views ---
     struct Viewport { int x, y, w, h; };
 
     struct FreeCam {
-        glm::vec3 pos { -1.5f, 1.0f, -1.5f };
-        glm::vec3 fwd {  0.6f, -0.2f,  0.7f }; 
+        glm::vec3 pos { 0.0f, 2.0f, 0.0f };
+        glm::vec3 fwd {  -2.0f, 0.f,  0.0f }; 
         glm::vec3 up  {  0.0f, 1.0f,  0.0f };
         double prevMouseX = 0.0, prevMouseY = 0.0;
         bool rotating = false;
@@ -272,9 +272,9 @@ public:
     FreeCam m_freeCam;
 
     // Bird’s-eye parameters
-    float m_birdsEyeWorldHalfSize = 2.0f;  
+    float m_birdsEyeWorldHalfSize = 10.0f;  
     glm::vec3 m_birdsEyeCenter { 0.0f, 0.0f, 0.0f };
-    float m_birdsEyeHeight = 15.0f;
+    float m_birdsEyeHeight = 50.0f;
 
     // ---- Lamp & path ----
     BezierPath m_bezierPath;
@@ -381,7 +381,7 @@ public:
         static glm::vec3 fcUp (0.0f, 1.0f,  0.0f);
 
         auto freeCamView = [&] {
-            return glm::lookAt(fcPos, fcPos + fcFwd, fcUp);
+            return glm::lookAt(m_freeCam.pos, m_freeCam.pos + m_freeCam.fwd, m_freeCam.up);
         };
         auto freeCamProj = [&](float aspect) {
             return glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
@@ -460,7 +460,7 @@ public:
                     return m_trackball.viewMatrix();
 
                 // Follow: camera at object-space offset transformed to world, looking at object origin
-                glm::vec3 objWorld = glm::vec3(m_walleMatrix * glm::vec4(0,0,0,1));
+                glm::vec3 objWorld = glm::vec3(m_walleMatrix * glm::vec4(0,2,0,1));
                 glm::vec3 camWorld = glm::vec3(m_walleMatrix * glm::vec4(m_followOffsetOS, 1.0f));
                 return glm::lookAt(camWorld, objWorld, glm::vec3(0,1,0));
             };
@@ -472,6 +472,7 @@ public:
             const glm::mat4 V = getView(m_camMode);
             // updating the live env cubemap from the mirror's world position
             glm::vec3 mirrorPosWS = glm::vec3(m_mirrorModel[3]);
+            updateDynamicEnv(mirrorPosWS);
 
             updateParticles(dt);
             drawParticles(P, V);
@@ -483,7 +484,7 @@ public:
                 m_defaultShader.bind();
 
                 setCommonUniforms(m_defaultShader, P);
-
+				
                 for (GPUMesh& mesh : m_meshes) {
                     // Choose per-mesh model matrix
                     glm::mat4 M = mesh.getIsMovable() ? m_walleMatrix : m_modelMatrix; 
@@ -712,10 +713,15 @@ public:
         spawnTileAt({0,0});
 
         // -- Example static object with speciffic postion generation ---
+         //std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
+
+
+		// --------- add Robot Arm object -------------
         glm::mat4 identity = glm::mat4(1.0);
-        glm::vec3 armPos = positionInTileWS({ 0,0 }, 0.45f, 1.0f);
+        glm::vec3 armPos = positionInTileWS({ 0,0 }, 0.45f, 0.9f);
         identity = glm::translate(identity, armPos);
-        //std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
+       
+
 
         identity = glm::scale(glm::rotate(identity, glm::radians(90.0f), glm::vec3(1.0, 0.0, 0.0)), glm::vec3(4.0));
         m_meshes_robotArm  = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/robotArm/arm.obj");
@@ -728,6 +734,9 @@ public:
         m_robotArm.startHand += m_robotArm.indexOffset;
         m_robotArm.origin = armPos;
 
+
+
+		// --------- add Screen object (TV) -------------
 
         glm::mat4 move = glm::translate(glm::mat4(1.0f), glm::vec3(4.5, 0.0, 0.0));
         move = glm::rotate(move, glm::radians(-90.0f), glm::vec3(0.0, 1.0, 0.0));
@@ -778,6 +787,8 @@ public:
         glUniform1i(shader.getUniformLocation("pbr"), m_pbr);
         glUniform1i(shader.getUniformLocation("nm"), m_normalMapping);
 
+        glUniform1i(shader.getUniformLocation("shadowsEnabled"), m_shadowsEnabled);
+
         glUniform1f(shader.getUniformLocation("glightRadius"), m_lightRadius);
         glUniform1f(shader.getUniformLocation("glightIntensity"), m_currentLightIntensity);
         glUniform1f(shader.getUniformLocation("uExposure"),       m_exposure);
@@ -791,7 +802,7 @@ public:
         glBindTexture(GL_TEXTURE_2D, m_shadowTex);
         glUniform1i(shader.getUniformLocation("shadowMap"), 5);
         glUniform1f(shader.getUniformLocation("shadowTexelSize"), 1.0f / float(m_shadowSize));
-        glUniform1f(shader.getUniformLocation("shadowBias"), 0.0015f);
+        glUniform1f(shader.getUniformLocation("shadowBias"), 0.0010f);
     }
 
     glm::vec3 getCameraPosition() {
@@ -814,7 +825,7 @@ public:
 
         ImGui::Begin("Views");
         ImGui::Checkbox("Use material if no texture", &m_useMaterial);
-        ImGui::SliderFloat("BirdsEye height", &m_birdsEyeWorldHalfSize, 0.5f, 10.0f);
+        ImGui::SliderFloat("BirdsEye height", &m_birdsEyeWorldHalfSize, 0.5f, 25.0f);
 
         ImGui::Text("Control Wall-e with arrows");
         ImGui::SliderFloat("Wall-e forward speed", &m_moveSpeed, 0.0, 0.2);
@@ -831,6 +842,7 @@ public:
         if (ImGui::Checkbox("Show Bézier curve", &m_showCurve)) {
             m_bezierPath.setVisible(m_showCurve);
         }
+		ImGui::Checkbox("Shadows:", &m_shadowsEnabled);
         ImGui::Checkbox("Pause lamp", &m_pauseLamp);
         ImGui::SliderFloat("Lamp speed (segments/s)", &m_lampSpeed, 0.0f, 1.0f);
         auto camModeCombo = [](const char* label, CamMode& mode) {
@@ -873,23 +885,24 @@ public:
         for (GPUMesh& mesh : m_meshes_robotArm) {
 
             // Choose per-mesh model matrix
-            glm::mat4 M{ 1.0f };
+
+            glm::mat4 M = glm::rotate(glm::mat4( 1.0f) , 180.0f, glm::vec3(0.0, 1.0, 0.0) );
             if (mesh.getMeshID()  < m_robotArm.startArm){
-                M = m_modelMatrix;
+                M *= m_modelMatrix;
             }
             else if (mesh.getMeshID() >= m_robotArm.startArm && mesh.getMeshID()< m_robotArm.startSecondJoint) {
-                M = firstTransformationRA(m_robotArmAngle1, m_robotArm);
+                M *= firstTransformationRA(m_robotArmAngle1, m_robotArm);
             }
             else if (mesh.getMeshID() >= m_robotArm.startSecondJoint && mesh.getMeshID() < m_robotArm.starThirdJoint) {
-                M = secondTransformationRA(m_robotArmAngle1, m_robotArmAngle2,  m_robotArm);
+                M *= secondTransformationRA(m_robotArmAngle1, m_robotArmAngle2,  m_robotArm);
                 //M = m_modelMatrix;
             }
             else if (mesh.getMeshID() >= m_robotArm.starThirdJoint && mesh.getMeshID() < m_robotArm.startHand) {
-                M = thirdTransformationRA(m_robotArmAngle1, m_robotArmAngle2, m_robotArmAngle3, m_robotArm);
+                M *= thirdTransformationRA(m_robotArmAngle1, m_robotArmAngle2, m_robotArmAngle3, m_robotArm);
                 //M = m_modelMatrix;
             }
             else {
-                M = forthTransformationRA(m_robotArmAngle1, m_robotArmAngle2, m_robotArmAngle3, m_robotArmAngle4, m_robotArm);
+                M *= forthTransformationRA(m_robotArmAngle1, m_robotArmAngle2, m_robotArmAngle3, m_robotArmAngle4, m_robotArm);
                 //M = m_modelMatrix;
             }
             glm::mat4 MVP = P * V * M;
@@ -1002,7 +1015,8 @@ public:
 
         }
        
-        
+        glUniform1i(m_waterShader.getUniformLocation("shadowsEnabled"), false);
+
         m_waterGpuMesh.draw(m_waterShader);
 
     }
@@ -1400,7 +1414,7 @@ private:
     std::vector<GPUMesh> m_tv;
     std::string screenContent =  RESOURCE_ROOT "resources/tv/textures/td";
     int frame = 0;
-    int frame_size = 2;
+    int frame_size = 46;
 
     bool m_pbr = false;
     bool m_normalMapping = false;
@@ -1444,6 +1458,7 @@ private:
     const std::string m_propBarrier = RESOURCE_ROOT "resources/props/road_block_a/road_block_a.obj";
     
     // --- Shadow mapping ---
+	bool m_shadowsEnabled = true;
     GLuint m_shadowFbo = 0;
     GLuint m_shadowTex = 0;
     int    m_shadowSize = 2048;

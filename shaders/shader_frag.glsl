@@ -24,6 +24,7 @@ uniform bool hasNormalMap;
 uniform bool pbr;
 uniform bool nm;
 uniform bool useMaterial;
+uniform bool shadowsEnabled  = false;
 
 uniform float glightRadius;
 uniform float glightIntensity;
@@ -96,6 +97,9 @@ void main(){
     float NdotL = max(dot(N, Ldir), 0.0);
     float shadow = computeShadow(N, Ldir);
     float directScale = mix(0.15, 1.0, shadow);
+    if(shadowsEnabled == false){
+        directScale = 1.0;
+    }
 
     if (pbr){
         vec3 F0 = mix(vec3(0.04), baseColor, mtl);

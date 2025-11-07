@@ -16,7 +16,7 @@ void BezierPath::initGL(const char* lineVertPath, const char* lineFragPath) {
 }
 namespace {
     constexpr float kCurveYScale = 2.0f;
-    constexpr float kCurveYBias  = 0.0f; 
+    constexpr float kCurveYBias  = 2.0f; 
 }
 
 void BezierPath::ensureBuffers() {
