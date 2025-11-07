@@ -998,22 +998,22 @@ public:
         glUniform1f(m_waterShader.getUniformLocation("time"),  getTimeSeconds());
 
 
-        if (m_useMaterial) {
-            glUniform1i(m_waterShader.getUniformLocation("useMaterial"), GL_TRUE);
-        }
-        else {
-            bool boundTexture = false;
+        //if (m_useMaterial) {
+          //  glUniform1i(m_waterShader.getUniformLocation("useMaterial"), GL_TRUE);
+        //}
+        ///else {
+        bool boundTexture = false;
 
-            // Diffuse map
-            bindTextureIfAvailable(m_waterGpuMesh.texturePath, m_waterShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
+        // Diffuse map
+        bindTextureIfAvailable(m_waterGpuMesh.texturePath, m_waterShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
 
-            // Normal map
-            bindTextureIfAvailable(m_waterGpuMesh.normalMap, m_waterShader, "normalMap", GL_TEXTURE1, "hasNormalMap", boundTexture);
-            std::cout << boundTexture << std::endl;
+        // Normal map
+        bindTextureIfAvailable(m_waterGpuMesh.normalMap, m_waterShader, "normalMap", GL_TEXTURE1, "hasNormalMap", boundTexture);
+        std::cout << boundTexture << std::endl;
 
-            glUniform1i(m_waterShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+        glUniform1i(m_waterShader.getUniformLocation("hasTexCoords"), GL_TRUE);
 
-        }
+        //}
        
         glUniform1i(m_waterShader.getUniformLocation("shadowsEnabled"), false);
 
@@ -1414,7 +1414,7 @@ private:
     std::vector<GPUMesh> m_tv;
     std::string screenContent =  RESOURCE_ROOT "resources/tv/textures/td";
     int frame = 0;
-    int frame_size = 46;
+    int frame_size = 45;
 
     bool m_pbr = false;
     bool m_normalMapping = false;
