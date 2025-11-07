@@ -115,6 +115,32 @@ public:
             envBuilder.addStage(GL_VERTEX_SHADER,   RESOURCE_ROOT "shaders/env_vert.glsl");
             envBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/env_frag.glsl");
             m_envShader = envBuilder.build();
+
+            // Particle shader
+            ShaderBuilder particleBuilder;
+            particleBuilder.addStage(GL_VERTEX_SHADER,   RESOURCE_ROOT "shaders/particle_vert.glsl");
+            particleBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/particle_frag.glsl");
+            m_particleShader = particleBuilder.build();
+
+            // Particle buffers
+            glGenVertexArrays(1, &m_particlesVao);
+            glGenBuffers(1, &m_particlesVbo);
+            glBindVertexArray(m_particlesVao);
+            glBindBuffer(GL_ARRAY_BUFFER, m_particlesVbo);
+            glBufferData(GL_ARRAY_BUFFER, m_maxParticles * (sizeof(glm::vec3) + sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
+
+            // layout: location=0 -> vec3 pos, location=1 -> float life
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3)+sizeof(float), (void*)0);
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(glm::vec3)+sizeof(float), (void*)sizeof(glm::vec3));
+
+            glBindVertexArray(0);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+            // Pre-allocate CPU container
+            m_particles.resize(m_maxParticles);
+            for (auto& p : m_particles) { p.life = 0.0f; }
             
             // Init path renderer (line shader) and default closed loop
             m_bezierPath.initGL(RESOURCE_ROOT "shaders/line_vert.glsl",
@@ -393,7 +419,9 @@ public:
             const glm::mat4 V = getView(m_camMode);
             // updating the live env cubemap from the mirror's world position
             glm::vec3 mirrorPosWS = glm::vec3(m_mirrorModel[3]);
-            updateDynamicEnv(mirrorPosWS);
+
+            updateParticles(dt);
+            drawParticles(P, V);
 
             renderShadowPass();
 
@@ -978,6 +1006,23 @@ private:
     bool m_useMaterial { true };
 	//bool m_useTrackBall{ false };
 
+    // --- Magic plant ---
+    bool m_magicPlantSpawned = false;
+    glm::vec3 m_magicPlantPosWS {0.0f};
+    std::vector<GPUMesh> m_magicPlantMeshes;
+
+    // --- Particles ---
+    struct ParticleCPU { glm::vec3 pos, vel; float life; };
+    std::vector<ParticleCPU> m_particles;
+    int    m_maxParticles = 512;
+    Shader m_particleShader;
+    GLuint m_particlesVao = 0, m_particlesVbo = 0;
+    //  tuning for particles
+    float m_particleLifeMax   = 2.8f;  
+    float m_particleUpVel     = 1.2f;   
+    float m_particleUpAccel   = 0.8f;  
+    float m_particleDamping   = 0.25f;  
+
     //Trackball m_trackball{ &m_window, glm::radians(80.0f) };
     // Projection and view matrices for you to fill in and use
     glm::mat4 m_projectionMatrix = glm::perspective(glm::radians(80.0f), 1.0f, 0.1f, 30.0f);
@@ -1051,6 +1096,88 @@ private:
             if (!corrected) break;
         }
     }
+    void updateParticles(float dt) {
+        if (!m_magicPlantSpawned) return;
+
+        // Emit ~40/sec up to max
+        const int emits = 40;
+        for (int i = 0; i < emits; ++i) {
+            int idx = -1;
+            for (int j = 0; j < m_maxParticles; ++j) { if (m_particles[j].life <= 0.0f) { idx = j; break; } }
+            if (idx < 0) break;
+
+            float rx = (rand() / (float)RAND_MAX - 0.5f) * 0.2f;
+            float rz = (rand() / (float)RAND_MAX - 0.5f) * 0.2f;
+
+            float ang = (float)rand() / RAND_MAX * 6.2831853f;
+            glm::vec3 tang = glm::vec3(std::cos(ang), 0.0f, std::sin(ang));
+
+            // ↑ more up, longer life
+            glm::vec3 vel = tang * 0.2f + glm::vec3(0.0f, m_particleUpVel, 0.0f);
+
+            m_particles[idx].pos  = m_magicPlantPosWS + glm::vec3(rx, 0.15f, rz);
+            m_particles[idx].vel  = vel;
+            m_particles[idx].life = m_particleLifeMax;
+        }
+
+        // Integrate + fade
+        for (auto& p : m_particles) {
+            if (p.life <= 0.0f) continue;
+            p.life -= dt;
+
+            // constant upward acceleration
+            p.vel += glm::vec3(0.0f, m_particleUpAccel, 0.0f) * dt;
+
+            // gentle swirl
+            float s = 1.5f;
+            p.vel.x += -p.vel.z * 0.5f * dt * s;
+            p.vel.z +=  p.vel.x * 0.5f * dt * s;
+
+            // move
+            p.pos += p.vel * dt;
+
+            // less damping so they keep rising
+            p.vel *= (1.0f - m_particleDamping * dt);
+        }
+
+        // Upload to GPU (packed: vec3 pos + float life)
+        glBindBuffer(GL_ARRAY_BUFFER, m_particlesVbo);
+        uint8_t* dst = (uint8_t*)glMapBufferRange(GL_ARRAY_BUFFER, 0,
+                        m_maxParticles * (sizeof(glm::vec3)+sizeof(float)),
+                        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+        if (dst) {
+            for (int i = 0; i < m_maxParticles; ++i) {
+                memcpy(dst, &m_particles[i].pos, sizeof(glm::vec3));             dst += sizeof(glm::vec3);
+                memcpy(dst, &m_particles[i].life, sizeof(float));                dst += sizeof(float);
+            }
+            glUnmapBuffer(GL_ARRAY_BUFFER);
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+
+    void drawParticles(const glm::mat4& P, const glm::mat4& V) {
+        if (!m_magicPlantSpawned) return;
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glDepthMask(GL_FALSE);            
+
+        m_particleShader.bind();
+        glm::mat4 VP = P * V;
+        glUniformMatrix4fv(m_particleShader.getUniformLocation("vp"), 1, GL_FALSE, glm::value_ptr(VP));
+        glUniform1f(m_particleShader.getUniformLocation("baseSize"), 12.0f); 
+        glUniform3fv(m_particleShader.getUniformLocation("tint"), 1, glm::value_ptr(glm::vec3(0.9f, 0.8f, 0.3f)));
+        glUniform1f(m_particleShader.getUniformLocation("lifeMax"), m_particleLifeMax);
+
+
+        glBindVertexArray(m_particlesVao);
+        glDrawArrays(GL_POINTS, 0, m_maxParticles);
+        glBindVertexArray(0);
+
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+    }
+
 
     
 };
@@ -1068,7 +1195,22 @@ void Application::spawnTileAt(glm::ivec2 tc)
     m_meshes.emplace_back(GPUMesh(t.generateMesh()));
 
     m_generatedTileKeys.insert(key);
-    maybeSpawnObstacle(tc);
+    if (!m_magicPlantSpawned && (int)m_generatedTileKeys.size() == 5) {
+        m_magicPlantSpawned = true;
+
+        m_magicPlantPosWS = positionInTileWS(tc, 0.5f, 0.5f);
+
+        glm::mat4 M(1.0f);
+        M = glm::translate(M, m_magicPlantPosWS);
+        M = glm::scale(M, glm::vec3(0.005f));
+
+        auto plant = GPUMesh::loadMeshGPU(M, RESOURCE_ROOT "resources/props/magic_plant/plant_-_outdoors.obj");
+        for (auto& g : plant) m_meshes.emplace_back(std::move(g)); 
+
+    }
+    else{
+        maybeSpawnObstacle(tc);
+    }
 
 }
 
