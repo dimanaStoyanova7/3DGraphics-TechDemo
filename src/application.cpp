@@ -501,7 +501,7 @@ public:
                 }
             }
 
-            drawMirror(P, V);
+            //drawMirror(P, V);
             drawWater(P, V);
 
             drawRobbotArm(P, V);
@@ -579,14 +579,14 @@ public:
 
         m_shadowShader.bind();
         // We send lightVP + modelMatrix (shader builds gl_Position = lightVP * model * pos)
+        glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
         for (GPUMesh& mesh : m_meshes) {
             glm::mat4 M = mesh.getIsMovable() ? m_walleMatrix : m_modelMatrix;
-            glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
             glUniformMatrix4fv(m_shadowShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
             mesh.draw(m_shadowShader);
         }
         for (GPUMesh& mesh : m_mirrorMeshes) {
-            glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
+            //glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
             glUniformMatrix4fv(m_shadowShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_mirrorModel));
             mesh.draw(m_shadowShader);
         }
@@ -936,6 +936,7 @@ public:
         glUniformMatrix4fv(m_waterShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
         glUniformMatrix4fv(m_waterShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
         glUniformMatrix3fv(m_waterShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+        glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
         glUniform1f(m_waterShader.getUniformLocation("time"),  getTimeSeconds());
 
 
@@ -1048,9 +1049,9 @@ public:
 
     void updateWallePosition()
     {
-        glm::vec3 fwdWS = glm::normalize(glm::mat3(m_walleMatrix) * kWalleForwardOS);
-        fwdWS.y = 0.0f;
-        if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
+        //glm::vec3 fwdWS = glm::normalize(glm::vec3(m_walleMatrix * glm::vec4(0,0,-1,0)));
+        //fwdWS.y = 0.0f;
+        //if (glm::dot(fwdWS, fwdWS) > 0.0f) fwdWS = glm::normalize(fwdWS);
 
         glm::vec3 moveDir(0.0f);
         //if (m_moveFwd)  moveDir += fwdWS * m_moveSpeed;
@@ -1077,11 +1078,6 @@ public:
         glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
         depenetrateXZ(posWS);
         m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
-
-        if (clock() - start > duration) {
-            start = clock();
-            side *= -1;
-        }
 
     }
 
@@ -1354,6 +1350,9 @@ private:
     int side = -1;
     clock_t start{};
     double duration = CLOCKS_PER_SEC * 0.2;
+
+    glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
+
 
     struct Obstacle {
         glm::ivec2 tile;   // which tile it belongs to

@@ -20,7 +20,7 @@ void main()
     gl_Position = mvpMatrix * vec4(position, 1);
     
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
-    gPosition     = worldPos.xyz;
+    gPosition     = position;
     gNormal       = normalModelMatrix * normal;
     gTexCoord     = texCoord;
 

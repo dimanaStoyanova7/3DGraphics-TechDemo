@@ -10,11 +10,10 @@ in vec2 gTexCoord[];
 in vec4 gLightClip[];          // <<< ADDED
 
 // ===== Uniforms (single value per draw call) =====
-uniform mat4 gprojection;
 uniform mat4 modelMatrix;
 uniform vec3 glightPos;
 uniform vec3 gcamPos;
-uniform vec3 gcolor;
+uniform vec3 glightColor;
 uniform bool nm;
 uniform bool hasNormalMap;
 
@@ -55,8 +54,8 @@ void main()
             fragTexCoord = gTexCoord[i];
             lightPos     = lightPos_T;
             camPos       = camPos_T;
-            lightColor   = gcolor;
-            fLightClip   = gLightClip[i];   // pass through
+            lightColor   = glightColor;
+            fLightClip   = gLightClip[i];   
             EmitVertex();
             }
      }
@@ -66,20 +65,14 @@ void main()
         
         for (int i = 0; i < 3; ++i)
         {
-            
             gl_Position = gl_in[i].gl_Position; 
-            fragPosition = gPosition[i]; // World Space Position
-            lightPos = glightPos;       // World Space Light Position
-            camPos = gcamPos;           // World Space Camera Position
-
-            // Pass other data
-            fragNormal = gNormal[i];    // World Space Normal
+            fragPosition =  vec3 (modelMatrix * vec4(gPosition[i], 0.0)); 
+            lightPos = glightPos;       
+            camPos = gcamPos;           
+            fragNormal = gNormal[i];    
             lightColor = glightColor;
             fragTexCoord = gTexCoord[i];
-            lightPos     = glightPos;
-            camPos       = gcamPos;
-            lightColor   = gcolor;
-            fLightClip   = gLightClip[i];   // pass through
+            fLightClip   = gLightClip[i];  
             EmitVertex();
         }
     }
