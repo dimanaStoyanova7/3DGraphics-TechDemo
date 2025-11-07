@@ -2,7 +2,7 @@
 
 uniform mat4 mvpMatrix;
 uniform mat4 modelMatrix;
-
+uniform mat4 lightVP;
 uniform mat3 normalModelMatrix;
 
 layout(location = 0) in vec3 position;
@@ -13,7 +13,7 @@ layout(location = 2) in vec2 texCoord;
 out vec3 gPosition;
 out vec3 gNormal;
 out vec2 gTexCoord;
-
+out vec4 gLightClip;
 
 uniform float time;         
 uniform float uG = 9.81;     
@@ -98,9 +98,12 @@ void main()
     newPostion.y += wavesHeight(newPostion.xz);
 
     gl_Position = mvpMatrix * vec4(newPostion, 1);
-    
+    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+
     gPosition   = newPostion;
     gNormal     = normalModelMatrix * normal;
     gTexCoord   = texCoord;
+
+    gLightClip    = lightVP * worldPos;
 
 }
