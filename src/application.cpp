@@ -699,7 +699,9 @@ public:
 
     void loadMeshesandTextures() {
         // last arguemnt isMovable indicates can the object be moved by key input
-        m_meshes = GPUMesh::loadMeshGPU(RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj", false, true);
+		glm::mat4 moveDown = glm::mat4(1.0f);
+		moveDown = glm::translate(moveDown, glm::vec3(0.0f, -0.4f, 0.0f));
+        m_meshes = GPUMesh::loadMeshGPU(moveDown, RESOURCE_ROOT "resources/wall-e/wall-e_scaled.obj", false, true);
 
         m_worldOrigin = glm::vec3(-5.0f, 0.0f, -5.0f);
         m_tileWidth   = 10.0f;
@@ -711,7 +713,7 @@ public:
 
         // -- Example static object with speciffic postion generation ---
         glm::mat4 identity = glm::mat4(1.0);
-        glm::vec3 armPos = positionInTileWS({ 0,0 }, 0.5f, 1.0f);
+        glm::vec3 armPos = positionInTileWS({ 0,0 }, 0.45f, 1.0f);
         identity = glm::translate(identity, armPos);
         //std::vector<GPUMesh> mm = GPUMesh::loadMeshGPU(identity, RESOURCE_ROOT "resources/car.obj");
 
@@ -725,7 +727,9 @@ public:
         m_robotArm.starThirdJoint += m_robotArm.indexOffset;
         m_robotArm.startHand += m_robotArm.indexOffset;
         m_robotArm.origin = armPos;
-        glm::mat4 move = glm::translate(glm::mat4(1.0f), glm::vec3(5.0, 0.5, 0.0));
+
+
+        glm::mat4 move = glm::translate(glm::mat4(1.0f), glm::vec3(4.5, 0.0, 0.0));
         move = glm::rotate(move, glm::radians(-90.0f), glm::vec3(0.0, 1.0, 0.0));
 
         m_tv = GPUMesh::loadMeshGPU( move, RESOURCE_ROOT "resources/tv/screen.obj");
@@ -1395,8 +1399,8 @@ private:
 
     std::vector<GPUMesh> m_tv;
     std::string screenContent =  RESOURCE_ROOT "resources/tv/textures/td";
-    int frame = 1;
-    int frame_size = 10;
+    int frame = 0;
+    int frame_size = 2;
 
     bool m_pbr = false;
     bool m_normalMapping = false;
