@@ -4,6 +4,8 @@
 #include "tile.h"
 #include "BezierPath.h"
 #include "cubemap.h"
+#include "water.h"
+
 // Always include window first (because it includes glfw, which includes GL which needs to be included AFTER glew).
 // Can't wait for modules to fix this stuff...
 #include <framework/disable_all_warnings.h>
@@ -99,8 +101,8 @@ struct RobotArm {
     glm::vec3 offsetSecond = glm::vec3(0.0, 2.0, 1.2);
     glm::vec3 offsetThird = glm::vec3(0.0, 3.2, 0.2);
     glm::vec3 offsetFourth = glm::vec3(0.0, 2.9, -1.2);
-    
-    
+
+
     glm::vec3 rotationAxis = glm::vec3(1.0, 0.0, 0.0);
     glm::vec3 handAxis = glm::vec3(0.0, 0.0, 1.0);
 
@@ -145,14 +147,47 @@ public:
 
             ShaderBuilder shadowBuilder;
             shadowBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/shadow_vert.glsl");
-            shadowBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "Shaders/shadow_frag.glsl");
+            shadowBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shadow_frag.glsl");
             m_shadowShader = shadowBuilder.build();
+            initShadowMap();
 
             ShaderBuilder envBuilder;
             envBuilder.addStage(GL_VERTEX_SHADER,   RESOURCE_ROOT "shaders/env_vert.glsl");
             envBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/env_frag.glsl");
             m_envShader = envBuilder.build();
-            
+
+            ShaderBuilder waterBuilder;
+            waterBuilder.addStage(GL_VERTEX_SHADER, RESOURCE_ROOT "shaders/water_vert.glsl");
+            waterBuilder.addStage(GL_GEOMETRY_SHADER, RESOURCE_ROOT "shaders/shader_geom.glsl");
+            waterBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/shader_frag.glsl");
+            m_waterShader = waterBuilder.build();
+
+            // Particle shader
+            ShaderBuilder particleBuilder;
+            particleBuilder.addStage(GL_VERTEX_SHADER,   RESOURCE_ROOT "shaders/particle_vert.glsl");
+            particleBuilder.addStage(GL_FRAGMENT_SHADER, RESOURCE_ROOT "shaders/particle_frag.glsl");
+            m_particleShader = particleBuilder.build();
+
+            // Particle buffers
+            glGenVertexArrays(1, &m_particlesVao);
+            glGenBuffers(1, &m_particlesVbo);
+            glBindVertexArray(m_particlesVao);
+            glBindBuffer(GL_ARRAY_BUFFER, m_particlesVbo);
+            glBufferData(GL_ARRAY_BUFFER, m_maxParticles * (sizeof(glm::vec3) + sizeof(float)), nullptr, GL_DYNAMIC_DRAW);
+
+            // layout: location=0 -> vec3 pos, location=1 -> float life
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3)+sizeof(float), (void*)0);
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(glm::vec3)+sizeof(float), (void*)sizeof(glm::vec3));
+
+            glBindVertexArray(0);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+            // Pre-allocate CPU container
+            m_particles.resize(m_maxParticles);
+            for (auto& p : m_particles) { p.life = 0.0f; }
+
             // Init path renderer (line shader) and default closed loop
             m_bezierPath.initGL(RESOURCE_ROOT "shaders/line_vert.glsl",
                                 RESOURCE_ROOT "shaders/line_frag.glsl");
@@ -221,7 +256,7 @@ public:
     CamMode m_camMode = CamMode::BirdsEye;
     
     // Follow-cam parameters (object-space offset that’s transformed by m_modelMatrix)
-    glm::vec3 m_followOffsetOS { 0.0f, 1.5f, 5.0f }; // behind & slightly above
+    glm::vec3 m_followOffsetOS { 0.0f, 0.8f, 2.0f }; // behind & slightly above
 
     // --- Multiple views ---
     struct Viewport { int x, y, w, h; };
@@ -239,7 +274,7 @@ public:
     // Bird’s-eye parameters
     float m_birdsEyeWorldHalfSize = 2.0f;  
     glm::vec3 m_birdsEyeCenter { 0.0f, 0.0f, 0.0f };
-    float m_birdsEyeHeight = 5.0f;
+    float m_birdsEyeHeight = 15.0f;
 
     // ---- Lamp & path ----
     BezierPath m_bezierPath;
@@ -252,11 +287,11 @@ public:
     double m_prevTime    = 0.0;
 
     // ---- Light reach + intensity/exposure ----
-    float m_lightRadius = 100.0f;          
-    float m_baseIntensity = 2.5f;      
-    float m_noonBoost     = 3.0f;     
-    float m_nightBoost    = 3.0f;       
-    float m_currentLightIntensity = 2.5f; 
+    float m_lightRadius = 100.0f;
+    float m_baseIntensity = 2.5f;
+    float m_noonBoost     = 3.0f;
+    float m_nightBoost    = 3.0f;
+    float m_currentLightIntensity = 2.5f;
     float m_exposure = 5.5f;
 
     // ---- Day/Night (Bezier) ----
@@ -276,8 +311,8 @@ public:
             }
     };
 
-    float m_dayU        = 0.0f;     
-    float m_daySpeed    = 1.0f/60.0f; 
+    float m_dayU        = 0.0f;
+    float m_daySpeed    = 1.0f/60.0f;
     bool  m_pauseDay    = false;
 
     std::vector<Bezier3D> m_dayColor;
@@ -323,9 +358,9 @@ public:
 
     // UI / control
     bool  m_activeFreeCam = true;          // which camera gets input
-    
-    float birdsEyeHalfSize = 2.0f;         // world half-extent visible in ortho
-    float birdsEyeHeight   = 5.0f;         // camera height
+
+    const glm::vec3 kWalleForwardOS = glm::vec3(1.0f, 0.0f, 0.0f);
+
 
     void update()
     {
@@ -371,7 +406,7 @@ public:
             m_prevTime = now;
             // ---- Day/Night advance ----
             if (!m_pauseDay) {
-                m_dayU += m_daySpeed * dt; 
+                m_dayU += m_daySpeed * dt;
             }
             int segCount = (int)m_dayColor.size();
             float wrap = float(segCount);
@@ -387,15 +422,19 @@ public:
             float intensityScale = glm::mix(m_nightBoost, m_noonBoost, std::pow(dayIAdj, 0.6f));
             m_currentLightIntensity = m_baseIntensity * intensityScale;
             m_lampColor = dayCol * dayIAdj;
-   
+
 
 
             if (!m_pauseLamp) {
-                m_pathU += m_lampSpeed * dt; // segments per second
+                m_pathU += m_lampSpeed * dt;
             }
             m_lampPos = m_bezierPath.evalGlobal(m_pathU);
 
-            
+            if (m_magicPlantSpawned) {
+                m_lampPos   = m_magicPlantPosWS + glm::vec3(0.0f, m_plantLampHeight, 0.0f);
+                m_lampColor = m_plantLampColor;
+            }
+
 
             // Clear the screen (full-frame)
             glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
@@ -433,7 +472,11 @@ public:
             const glm::mat4 V = getView(m_camMode);
             // updating the live env cubemap from the mirror's world position
             glm::vec3 mirrorPosWS = glm::vec3(m_mirrorModel[3]);
-            updateDynamicEnv(mirrorPosWS);
+
+            updateParticles(dt);
+            drawParticles(P, V);
+
+            renderShadowPass();
 
             // Draw one view (with lamp lighting + texture cache)
             {
@@ -453,9 +496,9 @@ public:
                     glUniformMatrix3fv(m_defaultShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));                    
 
                     setMaterialsandTextures(mesh, m_defaultShader);
-                    
+
                     mesh.draw(m_defaultShader);
-                    for (int i = 0; i < 8; ++i) {
+                    for (int i = 0; i < 5; ++i) {
                         glActiveTexture(GL_TEXTURE0 + i);
                         glBindTexture(GL_TEXTURE_2D, 0);
                     }
@@ -463,6 +506,7 @@ public:
             }
 
             drawMirror(P, V);
+            drawWater(P, V);
 
             drawRobbotArm(P, V);
             drawTV(P, V);
@@ -475,6 +519,92 @@ public:
     }
 
     //-----------------------Helper Functions use throughout the file ----------------------------------
+
+    void initShadowMap()
+    {
+        // depth texture
+        glGenTextures(1, &m_shadowTex);
+        glBindTexture(GL_TEXTURE_2D, m_shadowTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_shadowSize, m_shadowSize, 0,
+                    GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // PCF needs linear
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        // enable hardware depth compare (sampler2DShadow)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+
+        // FBO
+        glGenFramebuffers(1, &m_shadowFbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_shadowTex, 0);
+        glDrawBuffer(GL_NONE);
+        glReadBuffer(GL_NONE);
+
+        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if (status != GL_FRAMEBUFFER_COMPLETE)
+            std::cerr << "Shadow FBO incomplete: " << std::hex << status << std::dec << std::endl;
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    glm::mat4 computeLightVP()
+    {
+        glm::vec3 target = m_magicPlantSpawned
+            ? m_magicPlantPosWS
+            : glm::vec3(0.0f, 0.5f, 0.0f);
+
+        glm::vec3 up = glm::vec3(0,1,0);
+        glm::mat4 V  = glm::lookAt(m_lampPos, target, up);
+        glm::mat4 P  = glm::perspective(glm::radians(70.0f), 1.0f, m_shadowNear, m_shadowFar);
+        return P * V;
+    }
+
+
+    void renderShadowPass()
+    {
+        // compute light VP each frame (lamp moves)
+        m_lightVP = computeLightVP();
+
+        GLint prevFbo, prevViewport[4];
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+        glGetIntegerv(GL_VIEWPORT, prevViewport);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, m_shadowFbo);
+        glViewport(0, 0, m_shadowSize, m_shadowSize);
+        glScissor(0, 0, m_shadowSize, m_shadowSize);
+        glClearDepth(1.0);
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        // reduce peter-panning a bit
+        glCullFace(GL_FRONT);
+
+        m_shadowShader.bind();
+        // We send lightVP + modelMatrix (shader builds gl_Position = lightVP * model * pos)
+        glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
+        for (GPUMesh& mesh : m_meshes) {
+            glm::mat4 M = mesh.getIsMovable() ? m_walleMatrix : m_modelMatrix;
+            glUniformMatrix4fv(m_shadowShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
+            mesh.draw(m_shadowShader);
+        }
+        for (GPUMesh& mesh : m_mirrorMeshes) {
+            //glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
+            glUniformMatrix4fv(m_shadowShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(m_mirrorModel));
+            mesh.draw(m_shadowShader);
+        }
+
+        glCullFace(GL_BACK);
+
+        // restore
+        glBindFramebuffer(GL_FRAMEBUFFER, prevFbo);
+        glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+        glScissor(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    }
+
+
     void onKeyPressed(int key, int mods) {
         //if (!m_activeFreeCam) return;
 
@@ -626,11 +756,15 @@ public:
 
         
     }
+        textureCache.emplace(m_waterGpuMesh.texturePath, Texture(m_waterGpuMesh.texturePath));
+        textureCache.emplace(m_waterGpuMesh.normalMap, Texture(m_waterGpuMesh.normalMap));
+
+        }
 
     void setCommonUniforms(Shader& shader, const glm::mat4& P) {
         // Per-pass uniforms - g because used in geometry shader and then passed
         glUniform3fv(shader.getUniformLocation("glightPos"), 1, glm::value_ptr(m_lampPos));
-        glUniform3fv(shader.getUniformLocation("gcolor"), 1, glm::value_ptr(m_lampColor));
+        glUniform3fv(shader.getUniformLocation("glightColor"), 1, glm::value_ptr(m_lampColor));
         //replace with proper camera logic
 
         glm::vec3 camera_position = getCameraPosition();
@@ -641,9 +775,19 @@ public:
         glUniform1i(shader.getUniformLocation("nm"), m_normalMapping);
 
         glUniform1f(shader.getUniformLocation("glightRadius"), m_lightRadius);
-        glUniform1f(shader.getUniformLocation("glightIntensity"), m_currentLightIntensity); 
-        //glUniform1f(shader.getUniformLocation("uExposure"),       m_exposure);
+        glUniform1f(shader.getUniformLocation("glightIntensity"), m_currentLightIntensity);
+        glUniform1f(shader.getUniformLocation("uExposure"),       m_exposure);
 
+
+        if (m_normalMapping)glUniformMatrix4fv(m_defaultShader.getUniformLocation("gprojection"), 1, GL_FALSE, glm::value_ptr(P));
+
+        glUniformMatrix4fv(shader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
+
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D, m_shadowTex);
+        glUniform1i(shader.getUniformLocation("shadowMap"), 5);
+        glUniform1f(shader.getUniformLocation("shadowTexelSize"), 1.0f / float(m_shadowSize));
+        glUniform1f(shader.getUniformLocation("shadowBias"), 0.0015f);
     }
 
     glm::vec3 getCameraPosition() {
@@ -665,6 +809,8 @@ public:
         
 
         ImGui::Begin("Views");
+        ImGui::Checkbox("Use material if no texture", &m_useMaterial);
+        ImGui::SliderFloat("BirdsEye height", &m_birdsEyeWorldHalfSize, 0.5f, 10.0f);
 
         ImGui::Text("Control Wall-e with arrows");
         ImGui::SliderFloat("Wall-e forward speed", &m_moveSpeed, 0.0, 0.2);
@@ -673,11 +819,6 @@ public:
         ImGui::Text("Control robot arm with 1 2 3 4 and shift + 1 2 3 4");
 
         ImGui::Separator();
-
-        ImGui::Checkbox("Use material", &m_useMaterial);
-        ImGui::SliderFloat("BirdsEye half-size", &birdsEyeHalfSize, 0.5f, 10.0f); //don't update anything yet
-        ImGui::SliderFloat("BirdsEye height", &birdsEyeHeight, 1.0f, 20.0f); //don't update anything yet
-
         ImGui::Checkbox("PBR", &m_pbr);
         ImGui::Checkbox("Normla mapping", &m_normalMapping);
 
@@ -706,6 +847,12 @@ public:
         ImGui::Text("Computed intensity: %.2f", m_currentLightIntensity);
         ImGui::Checkbox   ("Pause day/night",  &m_pauseDay);
         ImGui::SliderFloat("Day speed (segs/s)", &m_daySpeed, 0.0f, 2.0f);
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Magic Plant");
+        ImGui::SliderInt("Spawn on tile #", &m_magicPlantTileIndex, 1, 200);
+        if (m_magicPlantTileIndex < 1) m_magicPlantTileIndex = 1;
+
 
 
 
@@ -751,10 +898,11 @@ public:
 
             setMaterialsandTextures(mesh, m_defaultShader);
             mesh.draw(m_defaultShader);
-            for (int i = 0; i < 8; ++i) {
+            for (int i = 0; i < 5; ++i) {
                 glActiveTexture(GL_TEXTURE0 + i);
                 glBindTexture(GL_TEXTURE_2D, 0);
             }
+            
         }
 
     }
@@ -813,9 +961,58 @@ public:
         // TODO - MAYBE REMOVE
         glEnable(GL_CULL_FACE);
     }
+
+    void drawWater(const glm::mat4& P, const glm::mat4& V) {
+
+        m_waterShader.bind();
+
+        setCommonUniforms(m_waterShader, P);
+
+        // Choose per-mesh model matrix
+        glm::mat4 M = m_modelMatrix;
+        glm::mat4 MVP = P * V * M;
+        glm::mat3 NMM = glm::inverseTranspose(glm::mat3(M));
+
+        // Set per-mesh matrices
+        glUniformMatrix4fv(m_waterShader.getUniformLocation("mvpMatrix"), 1, GL_FALSE, glm::value_ptr(MVP));
+        glUniformMatrix4fv(m_waterShader.getUniformLocation("modelMatrix"), 1, GL_FALSE, glm::value_ptr(M));
+        glUniformMatrix3fv(m_waterShader.getUniformLocation("normalModelMatrix"), 1, GL_FALSE, glm::value_ptr(NMM));
+        glUniformMatrix4fv(m_shadowShader.getUniformLocation("lightVP"), 1, GL_FALSE, glm::value_ptr(m_lightVP));
+        glUniform1f(m_waterShader.getUniformLocation("time"),  getTimeSeconds());
+
+
+        if (m_useMaterial) {
+            glUniform1i(m_waterShader.getUniformLocation("useMaterial"), GL_TRUE);
+        }
+        else {
+            bool boundTexture = false;
+
+            // Diffuse map
+            bindTextureIfAvailable(m_waterGpuMesh.texturePath, m_waterShader, "colorMap", GL_TEXTURE0, "hasTexCoords", boundTexture);
+
+            // Normal map
+            bindTextureIfAvailable(m_waterGpuMesh.normalMap, m_waterShader, "normalMap", GL_TEXTURE1, "hasNormalMap", boundTexture);
+            std::cout << boundTexture << std::endl;
+
+            glUniform1i(m_waterShader.getUniformLocation("hasTexCoords"), GL_TRUE);
+
+        }
+       
+        
+        m_waterGpuMesh.draw(m_waterShader);
+
+    }
+
+    float getTimeSeconds() {
+        return (float)clock() / (float)CLOCKS_PER_SEC;
+    }
+
     void renderSceneNoMirror(const glm::mat4& P, const glm::mat4& V)
     {
         m_defaultShader.bind();
+        glUniform3fv(m_defaultShader.getUniformLocation("glightPos"), 1, glm::value_ptr(m_lampPos));
+        glUniform3fv(m_defaultShader.getUniformLocation("glightColor"), 1, glm::value_ptr(m_lampColor));
+
         setCommonUniforms(m_defaultShader, P);
 
         for (GPUMesh& mesh : m_meshes) {
@@ -904,13 +1101,15 @@ public:
         if (m_moveFwd)  moveDir += fwd;
         if (m_moveBack) moveDir -= fwd;
 
+        // Normalize movement
         if (glm::length(moveDir) > 0.0f) {
             moveDir = glm::normalize(moveDir) * m_moveSpeed;
             m_walleMatrix = glm::translate(m_walleMatrix, moveDir);
         }
-
-        //glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
-        //glm::vec3 nextPos = currPos + moveDir;
+        glm::vec3 currPos = glm::vec3(m_walleMatrix[3]);
+        glm::vec3 nextPos = currPos + moveDir;
+        // --- Rotation ---
+        // Rotate around the Y-axis (up axis)
         if (m_rotateLeft)
             m_walleMatrix = glm::rotate(m_walleMatrix, glm::radians(m_rotationSpeed), glm::vec3(0, 1, 0));
         if (m_rotateRight)
@@ -920,12 +1119,6 @@ public:
         glm::vec3 posWS = glm::vec3(m_walleMatrix[3]);
         depenetrateXZ(posWS);
         m_walleMatrix[3] = glm::vec4(posWS, 1.0f);
-
-        //m_walleMatrix = glm::rotate(m_walleMatrix, side * glm::radians(m_rotationSpeed), fwd);
-        //if (clock() - start > duration) {
-          //  start = clock();
-            //side *= -1;
-        //}
 
     }
     void updateTV()
@@ -1027,6 +1220,7 @@ public:
                     textureCache.emplace(path, Texture(path));
                 }
             }
+
         }
     }
 
@@ -1160,12 +1354,34 @@ private:
     // Shader for default rendering and for depth rendering
     Shader m_defaultShader;
     Shader m_shadowShader;
+    Shader m_waterShader;
 
     std::vector<GPUMesh> m_meshes;
     std::map<std::string, Texture> textureCache;
 	Texture m_texture;
     bool m_useMaterial { false };
 	//bool m_useTrackBall{ false };
+
+    // --- Magic plant ---
+    bool m_magicPlantSpawned = false;
+    glm::vec3 m_magicPlantPosWS {0.0f};
+    std::vector<GPUMesh> m_magicPlantMeshes;
+    int  m_magicPlantTileIndex = 5;  
+    // --- Little lamp pinned above the plant ---
+    float     m_plantLampHeight = 1.2f;                 
+    glm::vec3 m_plantLampColor  = glm::vec3(0.5f, 0.55f, 0.60f); 
+
+    // --- Particles ---
+    struct ParticleCPU { glm::vec3 pos, vel; float life; };
+    std::vector<ParticleCPU> m_particles;
+    int    m_maxParticles = 512;
+    Shader m_particleShader;
+    GLuint m_particlesVao = 0, m_particlesVbo = 0;
+    //  tuning for particles
+    float m_particleLifeMax   = 2.8f;  
+    float m_particleUpVel     = 1.2f;   
+    float m_particleUpAccel   = 0.8f;  
+    float m_particleDamping   = 0.25f;  
 
     //Trackball m_trackball{ &m_window, glm::radians(80.0f) };
     // Projection and view matrices for you to fill in and use
@@ -1188,7 +1404,7 @@ private:
     bool m_moveBack = false;
     bool m_rotateLeft = false;
     bool m_rotateRight = false;
-    float m_moveSpeed = 0.1f;
+    float m_moveSpeed = 0.05f;
     float m_rotationSpeed = 0.5f;
 
     float m_robotArmAngle1{ 0.0f };
@@ -1198,6 +1414,9 @@ private:
 
     float m_ra_da = 0.05;
 
+    Water m_water{ Water(100, 100, 300.0f, 300.0f) };
+    GPUMesh m_waterGpuMesh{ GPUMesh(m_water.getMesh()) };
+
     int side = -1;
     clock_t start = clock();   
     clock_t tvStart = clock();
@@ -1206,6 +1425,7 @@ private:
     double tvDurationFrame = CLOCKS_PER_SEC / 20;
 
     glm::vec3 fwd = glm::vec3(m_walleMatrix * glm::vec4(1, 0, 0, 0));
+
 
     struct Obstacle {
         glm::ivec2 tile;   // which tile it belongs to
@@ -1218,6 +1438,14 @@ private:
     std::mt19937 m_rng { std::random_device{}() };
 
     const std::string m_propBarrier = RESOURCE_ROOT "resources/props/road_block_a/road_block_a.obj";
+    
+    // --- Shadow mapping ---
+    GLuint m_shadowFbo = 0;
+    GLuint m_shadowTex = 0;
+    int    m_shadowSize = 2048;
+    float  m_shadowNear = 0.1f;
+    float  m_shadowFar  = 50.0f;
+    glm::mat4 m_lightVP {1.0f};
 
     // helpers
     void maybeSpawnObstacle(glm::ivec2 tc);
@@ -1227,8 +1455,8 @@ private:
     }
 
     void depenetrateXZ(glm::vec3& posWS) {
-        const float walleRadius = 0.45f;     
-        const float skin        = 1e-3f;    
+        const float walleRadius = 0.45f;
+        const float skin        = 1e-3f;
         for (int iter = 0; iter < 4; ++iter) {
             bool corrected = false;
 
@@ -1252,8 +1480,90 @@ private:
             if (!corrected) break;
         }
     }
+    void updateParticles(float dt) {
+        if (!m_magicPlantSpawned) return;
 
-    
+        // Emit ~40/sec up to max
+        const int emits = 40;
+        for (int i = 0; i < emits; ++i) {
+            int idx = -1;
+            for (int j = 0; j < m_maxParticles; ++j) { if (m_particles[j].life <= 0.0f) { idx = j; break; } }
+            if (idx < 0) break;
+
+            float rx = (rand() / (float)RAND_MAX - 0.5f) * 0.2f;
+            float rz = (rand() / (float)RAND_MAX - 0.5f) * 0.2f;
+
+            float ang = (float)rand() / RAND_MAX * 6.2831853f;
+            glm::vec3 tang = glm::vec3(std::cos(ang), 0.0f, std::sin(ang));
+
+            // ↑ more up, longer life
+            glm::vec3 vel = tang * 0.2f + glm::vec3(0.0f, m_particleUpVel, 0.0f);
+
+            m_particles[idx].pos  = m_magicPlantPosWS + glm::vec3(rx, 0.15f, rz);
+            m_particles[idx].vel  = vel;
+            m_particles[idx].life = m_particleLifeMax;
+        }
+
+        // Integrate + fade
+        for (auto& p : m_particles) {
+            if (p.life <= 0.0f) continue;
+            p.life -= dt;
+
+            // constant upward acceleration
+            p.vel += glm::vec3(0.0f, m_particleUpAccel, 0.0f) * dt;
+
+            // gentle swirl
+            float s = 1.5f;
+            p.vel.x += -p.vel.z * 0.5f * dt * s;
+            p.vel.z +=  p.vel.x * 0.5f * dt * s;
+
+            // move
+            p.pos += p.vel * dt;
+
+            // less damping so they keep rising
+            p.vel *= (1.0f - m_particleDamping * dt);
+        }
+
+        // Upload to GPU (packed: vec3 pos + float life)
+        glBindBuffer(GL_ARRAY_BUFFER, m_particlesVbo);
+        uint8_t* dst = (uint8_t*)glMapBufferRange(GL_ARRAY_BUFFER, 0,
+                        m_maxParticles * (sizeof(glm::vec3)+sizeof(float)),
+                        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+        if (dst) {
+            for (int i = 0; i < m_maxParticles; ++i) {
+                memcpy(dst, &m_particles[i].pos, sizeof(glm::vec3));             dst += sizeof(glm::vec3);
+                memcpy(dst, &m_particles[i].life, sizeof(float));                dst += sizeof(float);
+            }
+            glUnmapBuffer(GL_ARRAY_BUFFER);
+        }
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+
+    void drawParticles(const glm::mat4& P, const glm::mat4& V) {
+        if (!m_magicPlantSpawned) return;
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        glDepthMask(GL_FALSE);            
+
+        m_particleShader.bind();
+        glm::mat4 VP = P * V;
+        glUniformMatrix4fv(m_particleShader.getUniformLocation("vp"), 1, GL_FALSE, glm::value_ptr(VP));
+        glUniform1f(m_particleShader.getUniformLocation("baseSize"), 12.0f); 
+        glUniform3fv(m_particleShader.getUniformLocation("tint"), 1, glm::value_ptr(glm::vec3(0.9f, 0.8f, 0.3f)));
+        glUniform1f(m_particleShader.getUniformLocation("lifeMax"), m_particleLifeMax);
+
+
+        glBindVertexArray(m_particlesVao);
+        glDrawArrays(GL_POINTS, 0, m_maxParticles);
+        glBindVertexArray(0);
+
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+    }
+
+
+
 };
 void Application::spawnTileAt(glm::ivec2 tc)
 {
@@ -1266,10 +1576,26 @@ void Application::spawnTileAt(glm::ivec2 tc)
     glm::vec3 end   = start + glm::vec3(m_tileWidth, 0.0f, m_tileDepth);
 
     Tile t(start, end);
+    GPUMesh gm = GPUMesh(t.generateMesh());
     m_meshes.emplace_back(GPUMesh(t.generateMesh()));
 
     m_generatedTileKeys.insert(key);
-    maybeSpawnObstacle(tc);
+    if (!m_magicPlantSpawned && (int)m_generatedTileKeys.size() == m_magicPlantTileIndex) {
+        m_magicPlantSpawned = true;
+
+        m_magicPlantPosWS = positionInTileWS(tc, 0.5f, 0.5f);
+
+        glm::mat4 M(1.0f);
+        M = glm::translate(M, m_magicPlantPosWS);
+        M = glm::scale(M, glm::vec3(0.005f));
+
+        auto plant = GPUMesh::loadMeshGPU(M, RESOURCE_ROOT "resources/props/magic_plant/plant_-_outdoors.obj");
+        for (auto& g : plant) m_meshes.emplace_back(std::move(g)); 
+
+    }
+    else{
+        maybeSpawnObstacle(tc);
+    }
 
 }
 
@@ -1303,7 +1629,7 @@ void Application::maybeSpawnObstacle(glm::ivec2 tc)
     glm::vec3 posWS = positionInTileWS(tc, uv.x, uv.y);
 
     const float tileY = tileStartWS(tc).y;
-    const float barrierHalfHeight = 0.95f; 
+    const float barrierHalfHeight = 0.95f;
     posWS.y = tileY + barrierHalfHeight;
 
     std::uniform_real_distribution<float> yawDeg(0.0f, 360.0f);
@@ -1329,7 +1655,7 @@ void Application::maybeSpawnObstacle(glm::ivec2 tc)
 
     // register colliders (XZ only; y is ignored elsewhere)
     m_obstacles.push_back(Obstacle{ tc, endA, halfWidth });
-    m_obstacles.push_back(Obstacle{ tc, posWS, halfWidth }); 
+    m_obstacles.push_back(Obstacle{ tc, posWS, halfWidth });
     m_obstacles.push_back(Obstacle{ tc, endB, halfWidth });
 }
 

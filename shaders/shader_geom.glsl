@@ -7,69 +7,55 @@ layout(triangle_strip, max_vertices = 3) out;
 in vec3 gPosition[];
 in vec3 gNormal[];
 in vec2 gTexCoord[];
+in vec4 gLightClip[];          // <<< ADDED
 
-// ===== Uniforms (single value per draw call ===== 
-uniform mat4 modelMatrix;      
-uniform vec3 glightPos;   
-uniform vec3 gcamPos;     
-uniform vec3 gcolor;      
+// ===== Uniforms (single value per draw call) =====
+uniform mat4 modelMatrix;
+uniform vec3 glightPos;
+uniform vec3 gcamPos;
+uniform vec3 glightColor;
 uniform bool nm;
+uniform bool hasNormalMap;
 
 // ===== outputs to fragment shader =====
 out vec3 fragPosition;
 out vec3 fragNormal;
 out vec2 fragTexCoord;
-out vec3 lightPos;      
+out vec3 lightPos;
 out vec3 camPos;
-out vec3 lightColor;      
+out vec3 lightColor;
+out vec4 fLightClip;
 
 void main()
 {
-    if(nm){
+    if(nm && hasNormalMap){
         // Edges of the triangle (Calculations look correct for TBN)
         vec3 edge0 = gPosition[1] - gPosition[0];
         vec3 edge1 = gPosition[2] - gPosition[0];
         vec2 deltaUV0 = gTexCoord[1] - gTexCoord[0];
         vec2 deltaUV1 = gTexCoord[2] - gTexCoord[0];
+        float invDet = 1.0 / (deltaUV0.x * deltaUV1.y - deltaUV1.x * deltaUV0.y);
 
-        float invDet = 1.0f / (deltaUV0.x * deltaUV1.y - deltaUV1.x * deltaUV0.y);
+        vec3 tangent   = invDet * (deltaUV1.y * edge0 - deltaUV0.y * edge1);
+        vec3 bitangent = invDet * (-deltaUV1.x * edge0 + deltaUV0.x * edge1);
 
-        vec3 tangent = vec3(invDet * (deltaUV1.y * edge0 - deltaUV0.y * edge1));
-        vec3 bitangent = vec3(invDet * (-deltaUV1.x * edge0 + deltaUV0.x * edge1));
+        vec3 T = normalize(vec3(modelMatrix * vec4(tangent,   0.0)));
+        vec3 B = normalize(vec3(modelMatrix * vec4(bitangent, 0.0)));
+        vec3 N = normalize(vec3(modelMatrix * vec4(cross(edge1, edge0), 0.0)));
 
-        vec3 T = normalize(vec3(modelMatrix * vec4(tangent, 0.0f)));
-        vec3 B = normalize(vec3(modelMatrix * vec4(bitangent, 0.0f)));
-        vec3 N = normalize(vec3(modelMatrix * vec4(cross(edge1, edge0), 0.0f)));
+        mat3 TBN = transpose(mat3(T, B, N));
+        vec3 lightPos_T = TBN * glightPos;
+        vec3 camPos_T   = TBN * gcamPos;
 
-        //vec3 T = normalize(tangent);
-        //vec3 B = normalize(bitangent);
-        //vec3 N = normalize(cross(edge1, edge0));
-
-
-        mat3 TBN = mat3(T, B, N);
-        TBN = transpose(TBN); // TBN is an orthogonal matrix
-
-       vec3 lightPos_T = TBN * glightPos;
-       vec3 camPos_T   = TBN * gcamPos;
-
-
-        // === VERTEX EMISSION LOOP ===
-       for (int i = 0; i < 3; ++i){
-            // CRITICAL FIX: gl_Position is already in Clip Space
-            gl_Position = gl_in[i].gl_Position; 
-
-            // Transform World Space position to TANGENT SPACE
+        for (int i = 0; i < 3; ++i) {
+            gl_Position  = gl_in[i].gl_Position;
             fragPosition = TBN * gPosition[i];
-    
-            // Pass other data per vertex
-            fragNormal = gNormal[i];
+            fragNormal   = gNormal[i];
             fragTexCoord = gTexCoord[i];
-    
-            // Pass the TBN-transformed uniform data
-            lightPos = lightPos_T;
-            camPos = camPos_T;
-            lightColor = gcolor; 
-
+            lightPos     = lightPos_T;
+            camPos       = camPos_T;
+            lightColor   = glightColor;
+            fLightClip   = gLightClip[i];   
             EmitVertex();
             }
      }
@@ -79,17 +65,14 @@ void main()
         
         for (int i = 0; i < 3; ++i)
         {
-            
             gl_Position = gl_in[i].gl_Position; 
-            fragPosition = gPosition[i]; // World Space Position
-            lightPos = glightPos;       // World Space Light Position
-            camPos = gcamPos;           // World Space Camera Position
-
-            // Pass other data
-            fragNormal = gNormal[i];    // World Space Normal
-            lightColor = gcolor;
+            fragPosition =  vec3 (modelMatrix * vec4(gPosition[i], 0.0)); 
+            lightPos = glightPos;       
+            camPos = gcamPos;           
+            fragNormal = gNormal[i];    
+            lightColor = glightColor;
             fragTexCoord = gTexCoord[i];
-            
+            fLightClip   = gLightClip[i];  
             EmitVertex();
         }
     }

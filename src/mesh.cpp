@@ -190,7 +190,7 @@ void GPUMesh::moveInto(GPUMesh&& other)
     m_vbo = other.m_vbo;
     m_vao = other.m_vao;
     m_uboMaterial = other.m_uboMaterial;
-
+    texturePath = other.texturePath;
     m_id = other.m_id;
     m_isMovable = other.m_isMovable;
 

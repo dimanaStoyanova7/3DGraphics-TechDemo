@@ -58,6 +58,7 @@ public:
     GPUMesh& operator=(GPUMesh&&);
 
     bool hasTextureCoords() const;
+ 
     std::string texturePath;
     void setTexturePath(std::string newPath) { texturePath = newPath; }
     std::string ambientTexture;
@@ -71,6 +72,7 @@ public:
 
     void setIsMovable(bool newValue) { m_isMovable = newValue; }
     bool getIsMovable() { return m_isMovable; }
+    bool hasAmbient() { return m_hasAmbientTexture; }
     
     // Bind VAO and call glDrawElements.
     void draw(const Shader& drawingShader);
