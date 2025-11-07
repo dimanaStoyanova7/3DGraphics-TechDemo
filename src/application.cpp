@@ -808,6 +808,12 @@ public:
         ImGui::Checkbox   ("Pause day/night",  &m_pauseDay);
         ImGui::SliderFloat("Day speed (segs/s)", &m_daySpeed, 0.0f, 2.0f);
 
+        ImGui::Separator();
+        ImGui::TextUnformatted("Magic Plant");
+        ImGui::SliderInt("Spawn on tile #", &m_magicPlantTileIndex, 1, 200);
+        if (m_magicPlantTileIndex < 1) m_magicPlantTileIndex = 1;
+
+
 
 
         ImGui::End();
@@ -1010,6 +1016,7 @@ private:
     bool m_magicPlantSpawned = false;
     glm::vec3 m_magicPlantPosWS {0.0f};
     std::vector<GPUMesh> m_magicPlantMeshes;
+    int  m_magicPlantTileIndex = 5;  
 
     // --- Particles ---
     struct ParticleCPU { glm::vec3 pos, vel; float life; };
@@ -1195,7 +1202,7 @@ void Application::spawnTileAt(glm::ivec2 tc)
     m_meshes.emplace_back(GPUMesh(t.generateMesh()));
 
     m_generatedTileKeys.insert(key);
-    if (!m_magicPlantSpawned && (int)m_generatedTileKeys.size() == 5) {
+    if (!m_magicPlantSpawned && (int)m_generatedTileKeys.size() == m_magicPlantTileIndex) {
         m_magicPlantSpawned = true;
 
         m_magicPlantPosWS = positionInTileWS(tc, 0.5f, 0.5f);
